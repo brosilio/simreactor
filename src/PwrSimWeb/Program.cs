@@ -11,10 +11,13 @@
 // =============================================================================
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -57,6 +60,9 @@ namespace PwrSimWeb
         private static bool _autoTick = false;
         private static double _simSpeed = 1.0;
 
+        private static readonly ConcurrentDictionary<string, WebSocket> _wsClients = new();
+        private static int _wsNextId = 0;
+
         private static readonly JsonSerializerOptions JsonOpts = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -73,6 +79,7 @@ namespace PwrSimWeb
             builder.Services.AddCors();
             var app = builder.Build();
             app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+            app.UseWebSockets();
             app.UseDefaultFiles();
             app.UseStaticFiles();
 
@@ -95,25 +102,93 @@ namespace PwrSimWeb
         {
             var sw = Stopwatch.StartNew();
             double lastMs = sw.Elapsed.TotalMilliseconds;
+            int pushTick = 0;
 
             while (!ct.IsCancellationRequested)
             {
                 try { await Task.Delay(50, ct); }
                 catch (TaskCanceledException) { break; }
 
-                if (!_autoTick) { lastMs = sw.Elapsed.TotalMilliseconds; continue; }
+                if (!_autoTick) { lastMs = sw.Elapsed.TotalMilliseconds; }
+                else
+                {
+                    double now = sw.Elapsed.TotalMilliseconds;
+                    double dt = (now - lastMs) / 1000.0 * _simSpeed;
+                    lastMs = now;
+                    if (dt > 0 && dt < 10)
+                        lock (_lock) { _controller.Update(dt); }
+                }
 
-                double now = sw.Elapsed.TotalMilliseconds;
-                double dt = (now - lastMs) / 1000.0 * _simSpeed;
-                lastMs = now;
-
-                if (dt > 0 && dt < 10)
-                    lock (_lock) { _controller.Update(dt); }
+                if (++pushTick >= 5)
+                {
+                    pushTick = 0;
+                    await BroadcastState();
+                }
             }
+        }
+
+        private static async Task BroadcastState()
+        {
+            if (_wsClients.IsEmpty) return;
+
+            string json;
+            lock (_lock)
+            {
+                var eventsArr = _engine.EventLog.TakeLast(200)
+                    .Select(e => new { t = e.Timestamp, cat = e.Category, msg = e.Message });
+                var payload = new { type = "state", autoTick = _autoTick, simSpeed = _simSpeed, data = BuildFullState(_engine), events = eventsArr };
+                json = JsonSerializer.Serialize(payload, JsonOpts);
+            }
+
+            var bytes = Encoding.UTF8.GetBytes(json);
+            var segment = new ArraySegment<byte>(bytes);
+            var dead = new List<string>();
+
+            foreach (var (id, ws) in _wsClients)
+            {
+                try
+                {
+                    if (ws.State == WebSocketState.Open)
+                        await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                    else
+                        dead.Add(id);
+                }
+                catch { dead.Add(id); }
+            }
+
+            foreach (var id in dead)
+                _wsClients.TryRemove(id, out _);
         }
 
         private static void MapRoutes(WebApplication app)
         {
+            app.Map("/ws", async context =>
+            {
+                if (!context.WebSockets.IsWebSocketRequest)
+                {
+                    context.Response.StatusCode = 400;
+                    return;
+                }
+                var ws = await context.WebSockets.AcceptWebSocketAsync();
+                var id = Interlocked.Increment(ref _wsNextId).ToString();
+                _wsClients[id] = ws;
+                Console.WriteLine($"[WS] client {id} connected  (total: {_wsClients.Count})");
+
+                var buf = new byte[256];
+                while (ws.State == WebSocketState.Open)
+                {
+                    try
+                    {
+                        var result = await ws.ReceiveAsync(new ArraySegment<byte>(buf), CancellationToken.None);
+                        if (result.MessageType == WebSocketMessageType.Close) break;
+                    }
+                    catch { break; }
+                }
+
+                _wsClients.TryRemove(id, out _);
+                Console.WriteLine($"[WS] client {id} disconnected (total: {_wsClients.Count})");
+                try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None); } catch { }
+            });
 
             app.MapGet("/api/state", () =>
             {

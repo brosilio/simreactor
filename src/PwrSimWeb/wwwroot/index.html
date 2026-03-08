@@ -182,7 +182,8 @@ body::after {
   <div class="hdr-info">
     SIM TIME: <span id="h-time">0.0s</span> &nbsp;|&nbsp;
     TICK: <span id="h-tick">0</span> &nbsp;|&nbsp;
-    MODE: <span id="h-mode">---</span>
+    MODE: <span id="h-mode">---</span> &nbsp;|&nbsp;
+    NET: <span id="h-ws" style="color:var(--amber)">CONN&#x2026;</span>
   </div>
 </div>
 
@@ -640,8 +641,8 @@ var autoRunning = true, simSpeed = 1, lastEventCount = 0, useAmerican = false;
 var toggleStates = {spray:false,turbine:true,offsite:true,diesel:false,rps:true,accum:true,rodAuto:false,
   rodScramOvr:false,przHtrAuto:true,przSprayAuto:true,govAuto:true,fwAuto:true,fwTripOvr:false};
 
-function apiGet(u){return fetch(u).then(function(r){return r.json();})}
 function apiPost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):'{}'})}
+function apiGet(u){return fetch(u).then(function(r){return r.json();})}
 
 function cmdRodBank(){apiPost('/api/rod/bank',{bank:+document.getElementById('rod-bank').value,target:+document.getElementById('rod-target').value})}
 function cmdRodSpeed(){apiPost('/api/rod/speed',{speed:+document.getElementById('rod-speed').value})}
@@ -649,7 +650,7 @@ function cmdRodMove(d,s){apiPost('/api/rod/'+d,{bank:+document.getElementById('r
 function toggleRodAuto(){toggleStates.rodAuto=!toggleStates.rodAuto;apiPost('/api/rod/auto',{enabled:toggleStates.rodAuto})}
 function cmdBoron(){apiPost('/api/boron',{ppm:+document.getElementById('boron-tgt').value})}
 function cmdBoronAdj(d){var e=document.getElementById('boron-tgt');e.value=Math.max(0,Math.min(3000,+e.value+d));cmdBoron()}
-function cmdInit(u){apiPost(u).then(function(){autoRunning=false;var b=document.getElementById('btn-autotick');b.textContent='\u23F8 PAUSE';b.classList.remove('active-on')})}
+function cmdInit(u){apiPost(u)}
 function cmdRcp(p,s){apiPost('/api/rcp',{pump:p,start:s})}
 function cmdPrzHtr(){apiPost('/api/pressurizer/heaters',{kw:+document.getElementById('prz-htr').value})}
 function toggleSpray(){toggleStates.spray=!toggleStates.spray;apiPost('/api/pressurizer/spray',{enabled:toggleStates.spray})}
@@ -714,8 +715,7 @@ function uOxide(um){return typeof um==='number'?(useAmerican?fmt(um/25.4,3)+' mi
 function uBurnup(b){return typeof b==='number'?(useAmerican?fmt(b/1000,3)+' GWd/MTU':fmt(b,0)+' MWd/t'):'---';}
 function uCVac(kpa){return typeof kpa==='number'?(useAmerican?fmt(kpa*0.2953,2)+' in\u00A0Hg':fmt(kpa,1)+' kPa'):'---';}
 
-function update(){
-  apiGet('/api/state').then(function(s){
+function renderState(s){
     if(!s)return;
     document.getElementById('h-time').textContent=fmtTime(s.sim.time);
     document.getElementById('h-tick').textContent=s.sim.tick;
@@ -873,19 +873,15 @@ function update(){
     updateFuelProfile(s);
     updateProtFunctions(s);
     updateCoreDamage(s);
-    updateEventLog();
-  }).catch(function(e){console.error('Update error:',e)});
 }
 
-function updateEventLog(){
-  apiGet('/api/events').then(function(events){
+function renderEvents(events){
     var el=document.getElementById('event-log');
     if(!events||events.length===lastEventCount)return;
     lastEventCount=events.length;
     var h='';
     for(var i=0;i<events.length;i++){var e=events[i];h+='<div class="evt"><span class="evt-time">['+fmt(e.t,1)+'s]</span> <span class="evt-cat">'+e.cat+'</span> '+e.msg+'</div>';}
     el.innerHTML=h;el.scrollTop=el.scrollHeight;
-  }).catch(function(){});
 }
 
 function updateRodDisplay(rods){
@@ -1068,9 +1064,36 @@ function updateCoreDamage(s){
   else pb.style.boxShadow = '';
 }
 
+function syncSimControls(autoTick, speed){
+  autoRunning=autoTick; simSpeed=speed;
+  var b=document.getElementById('btn-autotick');
+  b.textContent=autoTick?'\u25B6 RUN':'\u23F8 PAUSE';
+  b.classList.toggle('active-on',autoTick);
+  var bs=document.querySelectorAll('#time-controls .btn');
+  for(var i=0;i<bs.length;i++){
+    var b2=bs[i];
+    if(b2.textContent.indexOf('x')!==-1&&b2.textContent.indexOf(':')===-1)
+      b2.classList.toggle('active-on',b2.textContent===speed+'x');
+  }
+}
+
+function connectWs(){
+  var proto=location.protocol==='https:'?'wss:':'ws:';
+  var ws=new WebSocket(proto+'//'+location.host+'/ws');
+  var wsStatus=document.getElementById('h-ws');
+  ws.onopen=function(){wsStatus.textContent='LIVE';wsStatus.style.color='var(--grn)';};
+  ws.onmessage=function(evt){
+    try{
+      var msg=JSON.parse(evt.data);
+      if(msg.type==='state'){renderState(msg.data);renderEvents(msg.events||[]);syncSimControls(msg.autoTick,msg.simSpeed);}
+    }catch(e){console.error('WS parse error:',e);}
+  };
+  ws.onclose=function(){wsStatus.textContent='RETRY';wsStatus.style.color='var(--amber)';setTimeout(connectWs,2000);};
+  ws.onerror=function(){wsStatus.textContent='ERR';wsStatus.style.color='var(--red)';};
+}
+
 apiPost('/api/autotick',{enabled:true,speed:1});
-setInterval(update,250);
-update();
+connectWs();
 </script>
 </body>
 </html>
