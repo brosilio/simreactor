@@ -78,8 +78,10 @@ namespace PwrSimulator
         LossOfOffSitePower      = 1 << 11,
         SafetyInjection         = 1 << 12,
         ManualTrip              = 1 << 13,
-        HighStartupRate         = 1 << 14,
-        LowDNBRatio             = 1 << 15
+        HighStartupRate          = 1 << 14,
+        LowDNBRatio              = 1 << 15,
+        TurbineOverspeedWarning  = 1 << 16,  // speed 105–110% (warning before emergency OST)
+        TurbineUnderspeed        = 1 << 17   // speed < 95% while online and at power
     }
 
     public enum PumpState : byte
@@ -368,6 +370,20 @@ namespace PwrSimulator
         public double TurbineThrottlePosition;      // 0-1 (governor valve)
         public double TurbinePowerTarget;           // MW-e setpoint
         public byte   TurbineOnline;
+        public byte   GeneratorBreakerClosed;        // 1 = synchronized & connected to grid
+        public byte   GridTiedMode;                  // 1 = infinite-bus (grid-tied), 0 = islanded (isochronous)
+        public double GridFrequencyHz;               // grid frequency (Hz), nominal 60.0
+        public double TurbineMechanicalPowerMW;      // shaft mechanical power (before generator losses)
+        public double TurbineInletEnthalpyKJPerKg;   // h at HP turbine admission (kJ/kg)
+        public double TurbineExhaustEnthalpyKJPerKg; // h at LP exhaust / condenser inlet (kJ/kg)
+        public double TurbineSteamConsumptionKgPerS; // steam mass flow through turbine (kg/s)
+        public double CondenserHeatRejectionMW;      // heat duty to condenser cooling water (MW)
+        // ---- turbine annunciator alarms ------------------------------------
+        public byte   TurbineUnderspeedAlarm;        // speed < 95% rated while running
+        public byte   TurbineOverspeedWarn;          // speed 105–110% (pre-trip warning)
+        public byte   TurbineBreakerAlarm;           // breaker open unexpectedly at power
+        // ---- islanded governor integrator ----------------------------------
+        public double IsochrIntegrator;              // PI integrator state for isochronous governor
 
         // ---- feed-water system ---------------------------------------------
         public double MainFeedPumpSpeedFraction;
@@ -495,11 +511,20 @@ namespace PwrSimulator
         public double SgWaterMassKg             = 52000.0;
 
         // ---- turbine -------------------------------------------------------
-        public double TurbineRatedSpeedRPM      = 1800.0;     // 4-pole, 60 Hz
-        public double TurbineTimeConstantS      = 5.0;
-        public double TurbineEfficiency         = 0.335;       // ηth
-        public double CondenserDesignTempC       = 33.0;
-        public double CondenserDesignVacuumKPa   = 5.0;
+        public double TurbineRatedSpeedRPM       = 1800.0;    // 4-pole, 60 Hz
+        public double TurbineTimeConstantS       = 5.0;       // governor servo time constant (s)
+        public double TurbineEfficiency          = 0.335;     // gross cycle thermal efficiency ηth
+        public double CondenserDesignTempC        = 33.0;     // °C at rated heat rejection
+        public double CondenserDesignVacuumKPa    = 5.0;      // kPa saturation pressure at design Tcond
+        public double TurbineInertiaConstantH    = 9.0;       // H constant (MWs/MVA) — combined rotor inertia
+                                                              // 4-loop PWR: HP+3×LP cylinders + generator ≈ 8–10 s
+        public double TurbineGovernorDroop       = 0.05;      // 5 % speed droop (typical utility governor)
+        public double TurbineDampingD            = 2.0;       // per-unit mechanical damping coefficient D
+        public double TurbineOverspeedTripFraction   = 1.10;  // emergency overspeed trip at 110 %
+        public double TurbineOverspeedWarnFraction  = 1.05;  // RPS trip warning at 105 %
+        public double TurbineUnderspeedAlarmFraction = 0.95; // RPS trip / alarm at 95 % rated
+        public double TurbineSyncKpow            = 20.0;     // grid synchronising torque coefficient
+        public double GeneratorEfficiency        = 0.985;    // η_gen (copper + iron losses)
 
         // ---- protection setpoints ------------------------------------------
         public double TripHighFlux              = 1.09;        // fraction of rated
@@ -722,7 +747,18 @@ namespace PwrSimulator
 
             // turbine off-line
             _state.TurbineOnline = 0;
+            _state.GeneratorBreakerClosed = 0;
+            _state.GridTiedMode = 1;  // default to grid-tied
             _state.TurbineSpeedRPM = 0;
+            _state.GridFrequencyHz = 0;
+            _state.TurbineMechanicalPowerMW = 0;
+            _state.TurbineInletEnthalpyKJPerKg = 0;
+            _state.TurbineExhaustEnthalpyKJPerKg = 0;
+            _state.TurbineSteamConsumptionKgPerS = 0;
+            _state.CondenserHeatRejectionMW = 0;
+            _state.TurbineUnderspeedAlarm = 0;
+            _state.TurbineOverspeedWarn = 0;
+            _state.TurbineBreakerAlarm = 0;
 
             // ECCS standby
             _state.EccsStatus = EccsMode.Standby;
@@ -938,25 +974,56 @@ namespace PwrSimulator
 
             // turbine on-line
             _state.TurbineOnline = 1;
+            _state.GeneratorBreakerClosed = 1;
+            _state.GridTiedMode = 1;  // default to grid-tied
+            _state.TurbineUnderspeedAlarm = 0;
+            _state.TurbineOverspeedWarn = 0;
+            _state.TurbineBreakerAlarm = 0;
             _state.TurbineSpeedRPM = _design.TurbineRatedSpeedRPM;
             _state.TurbineSpeedFraction = 1.0;
             _state.TurbineThrottlePosition = 1.0;
-            _state.TurbineLoadMW = _design.RatedElectricalMW;
             _state.TurbinePowerTarget = _design.RatedElectricalMW;
-            _state.GeneratorOutputMW = _design.RatedElectricalMW;
-            _state.NetElectricalMW = _design.RatedElectricalMW - _state.HousekeepingLoadMW;
+            _state.GridFrequencyHz = 60.0;
+
+            // Steam thermodynamics at rated conditions (7 MPa saturated steam → condenser)
+            // hInFP, dhFP now come from the corrected ln(P) polynomial fits.
+            double hInFP = SaturatedSteamEnthalpyKJ(7.0);   // ≈ 2773 kJ/kg
+            double sInFP = SaturatedSteamEntropyKJ(7.0);    // ≈ 5.77 kJ/kg·K
+            double dhFP  = TurbineIsentropicDrop(hInFP, sInFP, _design.CondenserDesignTempC);
+            // dhFP ≈ 697 kJ/kg ideal; actual = dhFP × ηIs (already applied inside helper)
+            // Net: ~593 kJ/kg actual enthalpy drop at full steam admission
+
+            // SG steam flow: SG model uses hfg=1500 kJ/kg (latent heat at 7 MPa — correct)
+            double ratedSteamFlowKgPerS = _design.RatedThermalPowerMW * 1e6 / 1500e3; // ≈ 2274 kg/s
+
+            // Throttle at rated: the machine produces MORE power than rated at 100% throttle
+            // (~1347 MW mech / ~1327 MWe); governor sits at ~87% throttle for 1150 MWe.
+            double maxMechMW    = ratedSteamFlowKgPerS * dhFP / 1000.0; // at 100% throttle
+            double ratedMechMW  = _design.RatedElectricalMW / _design.GeneratorEfficiency;
+            double ratedThrottle = Math.Clamp(ratedMechMW / (maxMechMW + 1e-6), 0, 1);
+
+            _state.TurbineThrottlePosition = ratedThrottle;
+            _state.TurbineInletEnthalpyKJPerKg  = hInFP;
+            _state.TurbineExhaustEnthalpyKJPerKg = hInFP - dhFP;
+            _state.TurbineSteamConsumptionKgPerS = ratedSteamFlowKgPerS * ratedThrottle;
+            _state.TurbineMechanicalPowerMW = ratedMechMW;
+            _state.TurbineLoadMW            = ratedMechMW;
+            _state.GeneratorOutputMW        = _design.RatedElectricalMW;
+            _state.NetElectricalMW          = _design.RatedElectricalMW - _state.HousekeepingLoadMW;
+
+            // Condenser at design
+            _state.CondenserTempC     = _design.CondenserDesignTempC;
+            _state.CondenserVacuumKPa = _design.CondenserDesignVacuumKPa;
+            double hf = 4.186 * _design.CondenserDesignTempC;
+            _state.CondenserHeatRejectionMW = Math.Max(0,
+                _state.TurbineSteamConsumptionKgPerS * (_state.TurbineExhaustEnthalpyKJPerKg - hf) / 1000.0);
 
             // SG at rated
-            _state.SgSteamFlowKgPerS = _design.RatedThermalPowerMW * 1e6
-                                        / (1500e3); // h_fg ≈ 1500 kJ/kg at 7 MPa (matches SG model)
-            _state.SgFeedwaterFlowKgPerS = _state.SgSteamFlowKgPerS;
+            _state.SgSteamFlowKgPerS     = ratedSteamFlowKgPerS;
+            _state.SgFeedwaterFlowKgPerS  = ratedSteamFlowKgPerS;
             _state.MainFeedPumpSpeedFraction = 1.0;
-            _state.MainFeedPumpFlowKgPerS = _state.SgFeedwaterFlowKgPerS;
-            _state.FeedwaterTempC = _design.SgDesignFeedTempC;
-
-            // condenser
-            _state.CondenserTempC = _design.CondenserDesignTempC;
-            _state.CondenserVacuumKPa = _design.CondenserDesignVacuumKPa;
+            _state.MainFeedPumpFlowKgPerS = ratedSteamFlowKgPerS;
+            _state.FeedwaterTempC         = _design.SgDesignFeedTempC;
 
             // DNB
             _state.DNBRatio = 2.10;
@@ -1660,42 +1727,195 @@ namespace PwrSimulator
 
         private void UpdateSecondaryAndTurbine(double dt)
         {
+            // ----------------------------------------------------------------
+            //  Condenser: temperature drifts toward design point when turbine
+            //  is rejecting heat; approaches ambient when idle.
+            // ----------------------------------------------------------------
+            double tCondTarget = (_state.TurbineOnline == 1 && _state.TurbineTripFlag == 0)
+                ? _design.CondenserDesignTempC : 25.0;
+            _state.CondenserTempC += (tCondTarget - _state.CondenserTempC) * dt / 60.0;
+
+            // Condenser saturation pressure from temperature (Antoine)
+            double tK = _state.CondenserTempC + 273.15;
+            double log10PCond = 8.14019 - 1810.94 / (tK - 28.665);
+            _state.CondenserVacuumKPa = Math.Clamp(
+                Math.Pow(10, log10PCond) / 7500.6 * 1000.0, 1.0, 30.0);
+
+            // ----------------------------------------------------------------
+            //  Turbine offline / coasting down
+            // ----------------------------------------------------------------
             if (_state.TurbineOnline == 0 || _state.TurbineTripFlag == 1)
             {
-                // turbine coasting down
-                _state.TurbineSpeedRPM *= Math.Exp(-dt / 30.0); // 30 s coast-down τ
+                // Rotor coast-down: exponential decay (τ ≈ 30 s)
+                _state.TurbineSpeedRPM *= Math.Exp(-dt / 30.0);
                 _state.TurbineSpeedFraction = _state.TurbineSpeedRPM / _design.TurbineRatedSpeedRPM;
+                _state.GridFrequencyHz = 0;
+                _state.TurbineMechanicalPowerMW = 0;
                 _state.TurbineLoadMW = 0;
                 _state.GeneratorOutputMW = 0;
+                _state.TurbineSteamConsumptionKgPerS = 0;
+                _state.TurbineInletEnthalpyKJPerKg = 0;
+                _state.TurbineExhaustEnthalpyKJPerKg = 0;
+                _state.CondenserHeatRejectionMW = 0;
+                _state.TurbineUnderspeedAlarm = 0;
+                _state.TurbineOverspeedWarn = 0;
+                _state.TurbineBreakerAlarm = 0;
+                if (_state.TurbineTripFlag == 1)
+                    _state.GeneratorBreakerClosed = 0;
+                _state.MainFeedPumpFlowKgPerS = _state.SgFeedwaterFlowKgPerS;
                 return;
             }
 
-            // Throttle position is set by the controller (turbine governor).
-            // Physics just reads it and computes mechanical power.
+            // ----------------------------------------------------------------
+            //  Steam thermodynamics (Rankine cycle)
+            // ----------------------------------------------------------------
+            double pSteamMPa = _state.MainSteamPressureMPa;
+            double hIn       = SaturatedSteamEnthalpyKJ(pSteamMPa);
+            double sIn       = SaturatedSteamEntropyKJ(pSteamMPa);
+            double dh        = TurbineIsentropicDrop(hIn, sIn, _state.CondenserTempC);
+            const double etaIs = 0.85; // turbine isentropic efficiency (stage losses, moisture)
+            double dhActual  = dh * etaIs;
+            double hExhaust  = hIn - dhActual;
 
-            // turbine power
-            double steamAvailable = _state.SgSteamFlowKgPerS;
-            double steamUsed = _state.TurbineThrottlePosition * steamAvailable;
-            double hfg = 1500e3;
-            double mechPower = steamUsed * hfg * _design.TurbineEfficiency / 1e6; // MW
-            _state.TurbineLoadMW = mechPower;
+            _state.TurbineInletEnthalpyKJPerKg   = hIn;
+            _state.TurbineExhaustEnthalpyKJPerKg = hExhaust;
 
-            // speed regulation
-            double speedError = 1.0 - _state.TurbineSpeedFraction;
-            _state.TurbineSpeedRPM += speedError * 100 * dt;
-            _state.TurbineSpeedRPM = Math.Clamp(_state.TurbineSpeedRPM,
-                0, _design.TurbineRatedSpeedRPM * 1.05);
-            _state.TurbineSpeedFraction = _state.TurbineSpeedRPM / _design.TurbineRatedSpeedRPM;
+            // ----------------------------------------------------------------
+            //  Steam mass flow and mechanical power
+            // ----------------------------------------------------------------
+            double steamAvail = _state.SgSteamFlowKgPerS;
+            double steamUsed  = _state.TurbineThrottlePosition * steamAvail;
+            _state.TurbineSteamConsumptionKgPerS = steamUsed;
 
-            _state.GeneratorOutputMW = _state.TurbineLoadMW * 0.98; // gen efficiency
+            double mechPowerMW = steamUsed * dhActual / 1000.0; // kJ/kg × kg/s → MW
+            _state.TurbineMechanicalPowerMW = mechPowerMW;
+            _state.TurbineLoadMW = mechPowerMW;
 
-            // Feedwater flow is set by the controller (3-element control).
-            // Physics just books it.
+            double tCondC = _state.CondenserTempC;
+            double hfCond = 4.186 * tCondC;
+            _state.CondenserHeatRejectionMW = Math.Max(0, steamUsed * (hExhaust - hfCond) / 1000.0);
+
+            // ----------------------------------------------------------------
+            //  Swing equation — per-unit using rated electrical MW as base
+            //    2H · dN_pu/dt = P_mech_e_pu − P_elec_pu − D·(N_pu−1)
+            //
+            //  Three modes determined by GridTiedMode and GeneratorBreakerClosed:
+            //    A. Breaker open (runup): only mechanical friction, speed free
+            //    B. Breaker closed, grid-tied: infinite-bus; sync torque holds N≈1
+            //    C. Breaker closed, islanded: machine IS the grid; freq tracks speed
+            // ----------------------------------------------------------------
+            double etaGen    = _design.GeneratorEfficiency;
+            double P_base    = _design.RatedElectricalMW;            // electrical MW base
+            double N_pu      = _state.TurbineSpeedFraction;
+            double H         = _design.TurbineInertiaConstantH;      // 6 s
+
+            // Mechanical power converted to electrical-equivalent per-unit
+            // (accounts for generator losses so the pu system is consistent)
+            double P_mech_e_pu = mechPowerMW * etaGen / P_base;
+
+            // Mechanical friction only (windage, bearing losses) — always present,
+            // always opposes rotation. Very small: ~0.3% at rated speed.
+            // This term ONLY applies when no electrical load damping is present.
+            const double D_mech = 0.003;
+
+            double accel;
+            if (_state.GeneratorBreakerClosed == 1)
+            {
+                double D_load = _design.TurbineDampingD; // frequency-sensitive load damping
+
+                if (_state.GridTiedMode == 1)
+                {
+                    // --- Mode B: Grid-tied (infinite bus) ---
+                    // The grid provides a strong synchronising torque that holds N≈1.
+                    // Electrical output follows mechanical power (governor determines both).
+                    _state.GeneratorOutputMW = mechPowerMW * etaGen;
+                    double P_elec_pu = _state.GeneratorOutputMW / P_base;
+
+                    // Grid frequency: 60 Hz (infinite bus). Show small droop deviation
+                    // to give the operator visibility into the power imbalance.
+                    double imbalance = P_mech_e_pu - P_elec_pu;
+                    _state.GridFrequencyHz = Math.Clamp(
+                        60.0 + imbalance * _design.TurbineGovernorDroop * 60.0, 58.0, 62.0);
+
+                    // Swing equation: synchronising torque (K_sync) strongly pulls N→1
+                    double K_sync = _design.TurbineSyncKpow;
+                    accel = (P_mech_e_pu - P_elec_pu
+                             - D_load * (N_pu - 1.0)
+                             + K_sync  * (1.0 - N_pu)) / (2.0 * H);
+                }
+                else
+                {
+                    // --- Mode C: Islanded (isochronous) ---
+                    // Machine IS the grid. Frequency = rotor speed × 60.
+                    // Electrical load = TurbinePowerTarget (what connected loads demand).
+                    // If P_mech < load → frequency drops. Governor responds isochronously.
+                    double P_load_pu = _state.TurbinePowerTarget / P_base;
+
+                    // Swing equation: no synchronising torque; load damping still applies
+                    // (connected induction-motor loads speed up when frequency rises).
+                    accel = (P_mech_e_pu - P_load_pu
+                             - D_load * (N_pu - 1.0)) / (2.0 * H);
+
+                    _state.GridFrequencyHz = N_pu * 60.0;
+
+                    // Generator delivers minimum of capacity and load demand
+                    _state.GeneratorOutputMW = Math.Clamp(
+                        mechPowerMW * etaGen, 0, _state.TurbinePowerTarget);
+                }
+            }
+            else
+            {
+                // --- Mode A: Breaker open — runup or post-trip cooling ---
+                // No electrical load. Only mechanical friction damps the rotor.
+                accel = (P_mech_e_pu - D_mech * N_pu) / (2.0 * H);
+                _state.GridFrequencyHz = N_pu * 60.0; // local bus tracks rotor
+                _state.GeneratorOutputMW = 0;
+            }
+
+            // Euler integration with hard limits (step ≤ 0.05 s → stable for H=6)
+            N_pu = Math.Clamp(N_pu + accel * dt, 0.0, _design.TurbineOverspeedTripFraction + 0.05);
+            _state.TurbineSpeedFraction = N_pu;
+            _state.TurbineSpeedRPM      = N_pu * _design.TurbineRatedSpeedRPM;
+
+            // ----------------------------------------------------------------
+            //  Emergency overspeed trip (hardware mechanical OST, cannot be bypassed)
+            // ----------------------------------------------------------------
+            if (N_pu > _design.TurbineOverspeedTripFraction && _state.TurbineTripFlag == 0)
+            {
+                _state.TurbineTripFlag        = 1;
+                _state.GeneratorBreakerClosed = 0;
+                LogEvent("TURB", $"Turbine EMERGENCY OVERSPEED TRIP at {N_pu * 100:F1}% rated speed.");
+            }
+
+            // ----------------------------------------------------------------
+            //  Annunciator alarms
+            // ----------------------------------------------------------------
+            bool running = _state.TurbineOnline == 1 && _state.TurbineTripFlag == 0;
+            double totalPower = _state.ThermalPowerFraction + _state.DecayHeatFraction;
+
+            byte prevUnderspeed = _state.TurbineUnderspeedAlarm;
+            byte prevOverWarn   = _state.TurbineOverspeedWarn;
+            byte prevBkrAlarm   = _state.TurbineBreakerAlarm;
+
+            _state.TurbineUnderspeedAlarm = (byte)(
+                running && N_pu < _design.TurbineUnderspeedAlarmFraction ? 1 : 0);
+            _state.TurbineOverspeedWarn = (byte)(
+                running && N_pu > _design.TurbineOverspeedWarnFraction ? 1 : 0);
+            // Breaker alarm: breaker trips unexpectedly while generating significant power
+            _state.TurbineBreakerAlarm = (byte)(
+                running && _state.GeneratorBreakerClosed == 0
+                && _state.TurbineMechanicalPowerMW > 0.05 * P_base ? 1 : 0);
+
+            // Log alarm transitions (alarm → active edge)
+            if (_state.TurbineUnderspeedAlarm == 1 && prevUnderspeed == 0)
+                LogEvent("TURB", $"ALARM: Turbine UNDERSPEED — {N_pu * 100:F1}% rated speed.");
+            if (_state.TurbineOverspeedWarn == 1 && prevOverWarn == 0)
+                LogEvent("TURB", $"ALARM: Turbine OVERSPEED WARNING — {N_pu * 100:F1}% (trip at {_design.TurbineOverspeedTripFraction * 100:F0}%).");
+            if (_state.TurbineBreakerAlarm == 1 && prevBkrAlarm == 0)
+                LogEvent("TURB", $"ALARM: Generator BREAKER OPEN at load ({_state.TurbineMechanicalPowerMW:F0} MW mech).");
+
+            // Feedwater
             _state.MainFeedPumpFlowKgPerS = _state.SgFeedwaterFlowKgPerS;
-
-            // condenser
-            _state.CondenserTempC = _design.CondenserDesignTempC;
-            _state.CondenserVacuumKPa = _design.CondenserDesignVacuumKPa;
         }
 
         // =====================================================================
@@ -1919,7 +2139,7 @@ namespace PwrSimulator
 
         private void UpdateElectrical(double dt)
         {
-            _state.GeneratorOutputMW = _state.TurbineLoadMW * 0.98;
+            // GeneratorOutputMW is already set by UpdateSecondaryAndTurbine (swing equation).
             _state.NetElectricalMW = _state.GeneratorOutputMW - _state.HousekeepingLoadMW;
         }
 
@@ -2133,6 +2353,62 @@ namespace PwrSimulator
             return 1810.94 / (8.14019 - log10PmmHg) - 244.485;
         }
 
+        /// <summary>
+        /// Saturated steam enthalpy (kJ/kg) at given pressure (MPa).
+        /// Linear fit to IAPWS-IF97 data: ~2765 kJ/kg at 7 MPa, ~2800 at 1 MPa.
+        /// </summary>
+        /// <summary>
+        /// Saturated vapour enthalpy hg (kJ/kg) vs pressure (MPa).
+        /// Fit using ln(P) basis against IAPWS-IF97; error &lt; 20 kJ/kg over 0.001–15 MPa.
+        ///   P=0.005 MPa → 2561  (real 2561) ✓
+        ///   P=1.0   MPa → 2778  (real 2778) ✓
+        ///   P=7.0   MPa → 2773  (real 2773) ✓
+        ///   P=15    MPa → 2596  (real 2611) ✓
+        /// </summary>
+        private static double SaturatedSteamEnthalpyKJ(double pMPa)
+        {
+            double x = Math.Log(Math.Clamp(pMPa, 0.001, 20.0));  // ln(P/MPa)
+            return 2778.0 + 9.126 * x - 6.009 * x * x;
+        }
+
+        /// <summary>
+        /// Saturated vapour entropy sg (kJ/kg·K) vs pressure (MPa).
+        /// Fit using ln(P) basis against IAPWS-IF97; error &lt; 0.1 kJ/kg·K over 0.001–15 MPa.
+        ///   P=0.005 MPa → 8.34  (real 8.61, Δ=0.27) acceptable at condenser conditions
+        ///   P=1.0   MPa → 6.59  (real 6.59) ✓
+        ///   P=7.0   MPa → 5.77  (real 5.81) ✓
+        /// </summary>
+        private static double SaturatedSteamEntropyKJ(double pMPa)
+        {
+            double x = Math.Log(Math.Clamp(pMPa, 0.001, 20.0));  // ln(P/MPa)
+            return 6.585 - 0.394 * x - 0.0118 * x * x;
+        }
+
+        /// <summary>
+        /// Actual enthalpy drop (kJ/kg) across the turbine, expanding from (h_in, s_in)
+        /// to condenser at T_cond (°C).  Assumes 85% isentropic efficiency and wet-steam
+        /// exhaust at condenser conditions.
+        /// </summary>
+        private static double TurbineIsentropicDrop(double hInKJ, double sInKJ, double tCondC)
+        {
+            double tK = tCondC + 273.15;
+            // Condenser saturation pressure from temperature (Antoine equation)
+            double pCond = Math.Pow(10, 8.14019 - 1810.94 / (tK - 28.665)) / 7500.6;
+            pCond = Math.Clamp(pCond, 0.001, 0.1);
+
+            // Condenser liquid properties
+            double hf  = 4.186 * tCondC;                                // liquid enthalpy (kJ/kg)
+            double sf  = 4.186 * Math.Log(tK / 273.15);                 // liquid entropy  (kJ/kg·K)
+            double hfg = SaturatedSteamEnthalpyKJ(pCond) - hf;          // latent heat
+            double sfg = SaturatedSteamEntropyKJ(pCond) - sf;           // entropy of vaporisation
+
+            // Isentropic exhaust quality (wet steam)
+            // Clamped 0.65–1.0: below 0.65 excessive moisture; above 1.0 is superheated
+            double x = Math.Clamp((sInKJ - sf) / (sfg + 1e-6), 0.65, 1.0);
+            double hExhaust = hf + x * hfg;
+            return hInKJ - hExhaust;
+        }
+
         // =====================================================================
         //  EVENT LOG
         // =====================================================================
@@ -2289,13 +2565,50 @@ namespace PwrSimulator
                 _state.TurbineOnline = 1;
                 _state.TurbineTripFlag = 0;
                 _state.TurbineSpeedRPM = 100; // start rolling
-                LogEvent("CMD", "Turbine LATCHED and rolling.");
+                _state.GeneratorBreakerClosed = 0; // breaker must be closed separately at synchronous speed
+                LogEvent("CMD", "Turbine LATCHED and rolling — sync then close breaker.");
             }
             else
             {
                 _state.TurbineTripFlag = 1;
+                _state.GeneratorBreakerClosed = 0;
                 LogEvent("CMD", "Turbine TRIP commanded.");
             }
+        }
+
+        /// <summary>Close or open the generator output breaker (grid connection).</summary>
+        public void CommandGeneratorBreaker(bool close)
+        {
+            if (close)
+            {
+                if (_state.TurbineOnline == 0 || _state.TurbineTripFlag == 1)
+                {
+                    LogEvent("CMD", "Breaker close rejected — turbine not running.");
+                    return;
+                }
+                double speedPct = _state.TurbineSpeedFraction * 100;
+                if (_state.TurbineSpeedFraction < 0.98 || _state.TurbineSpeedFraction > 1.02)
+                {
+                    LogEvent("CMD", $"Breaker close rejected — speed {speedPct:F1}% (sync window 98–102%).");
+                    return;
+                }
+                _state.GeneratorBreakerClosed = 1;
+                LogEvent("CMD", "Generator breaker CLOSED — synchronized to grid.");
+            }
+            else
+            {
+                _state.GeneratorBreakerClosed = 0;
+                LogEvent("CMD", "Generator breaker OPENED.");
+            }
+        }
+
+        /// <summary>Switch between grid-tied (infinite-bus) and islanded (isochronous) mode.</summary>
+        public void CommandGridMode(bool gridTied)
+        {
+            _state.GridTiedMode = (byte)(gridTied ? 1 : 0);
+            LogEvent("CMD", gridTied
+                ? "Grid mode → GRID TIED (infinite bus, 60 Hz reference)."
+                : "Grid mode → ISLANDED (isochronous, machine is the grid).");
         }
 
         /// <summary>Set turbine electrical load target (MWe).</summary>

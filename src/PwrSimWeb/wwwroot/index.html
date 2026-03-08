@@ -121,7 +121,6 @@ body::after {
   border: 1px solid #000; border-top: none; border-left: none;
   transform: rotate(45deg);
 }
-
 /* Bar gauges */
 .bar-gauge { height: 10px; background: #0d1f0d; border: 1px solid var(--grn-dark); margin: 3px 0; overflow: hidden; }
 .bar-fill { height: 100%; background: var(--grn); box-shadow: 0 0 6px var(--grn-glow); transition: width 0.3s; }
@@ -220,6 +219,9 @@ body::after {
   <span class="alarm-tag clear" id="a-hicont">HI CONT</span>
   <span class="alarm-tag clear" id="a-losglv">LO SG LVL</span>
   <span class="alarm-tag clear" id="a-turbtrp">TURB TRIP</span>
+  <span class="alarm-tag clear" id="a-turbund">TURB UNDSPD</span>
+  <span class="alarm-tag clear" id="a-turbovr">TURB OVSPD</span>
+  <span class="alarm-tag clear" id="a-bkralarm">BKR OPEN</span>
   <span class="alarm-tag clear" id="a-loop">LOOP</span>
   <span class="alarm-tag clear" id="a-si">SI</span>
   <span class="alarm-tag clear" id="a-manual">MANUAL</span>
@@ -447,13 +449,20 @@ body::after {
   <div class="panel">
     <div class="panel-title">TURBINE-GENERATOR</div>
     <div class="panel-body">
-      <div class="drow"><span class="dlabel">STATUS</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-turbtrp" title="Bypass Turbine-Trip scram"><input type="checkbox" id="byp-turbtrp" onchange="setBypassed('TurbineTrip',this.checked)">BYP</label><span class="dval" id="v-turbstat">---</span></div></div>
-      <div class="drow"><span class="dlabel">LOAD</span><span class="dval" id="v-turbload">---</span></div>
-      <div class="drow"><span class="dlabel">SPEED</span><span class="dval" id="v-turbspd">---</span></div>
+      <div class="drow"><span class="dlabel">STATUS</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-turbtrp" title="Bypass Turbine-Trip scram"><input type="checkbox" id="byp-turbtrp" onchange="setBypassed('TurbineTrip',this.checked)">BYP TRIP SCRAM</label><span class="dval" id="v-turbstat">---</span></div></div>
+      <div class="drow"><span class="dlabel">GRID MODE</span><span class="dval" id="v-gridmode">---</span></div>
+      <div class="drow"><span class="dlabel">BREAKER</span><span class="dval" id="v-breaker">---</span></div>
+      <div class="drow"><span class="dlabel">SPEED</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-turbund" title="Bypass Turbine Underspeed reactor trip"><input type="checkbox" id="byp-turbund" onchange="setBypassed('TurbineUnderspeed',this.checked)">BYP UNDSPD</label><span class="dval" id="v-turbspd">---</span></div></div>
+      <div class="drow"><span class="dlabel">GRID / LOCAL FREQ</span><span class="dval" id="v-gridfreq">---</span></div>
       <div class="drow"><span class="dlabel">THROTTLE</span><span class="dval" id="v-turbthrt">---</span></div>
+      <div class="drow"><span class="dlabel">MECH POWER</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-turbovr" title="Bypass Turbine Overspeed Warning reactor trip"><input type="checkbox" id="byp-turbovr" onchange="setBypassed('TurbineOverspeedWarning',this.checked)">BYP OVSPD</label><span class="dval" id="v-mechpow">---</span></div></div>
       <div class="drow"><span class="dlabel">GEN OUTPUT</span><span class="dval cyan" id="v-genout">---</span></div>
       <div class="drow"><span class="dlabel">NET ELECTRICAL</span><span class="dval cyan" id="v-netmw">---</span></div>
-      <div class="drow"><span class="dlabel">CONDENSER</span><span class="dval" id="v-cond">---</span></div>
+      <div class="drow"><span class="dlabel">STEAM FLOW</span><span class="dval" id="v-turbstm">---</span></div>
+      <div class="drow"><span class="dlabel">INLET h</span><span class="dval" id="v-hinlet">---</span></div>
+      <div class="drow"><span class="dlabel">EXHAUST h</span><span class="dval" id="v-hexhaust">---</span></div>
+      <div class="drow"><span class="dlabel">CONDENSER DUTY</span><span class="dval" id="v-condduty">---</span></div>
+      <div class="drow"><span class="dlabel">COND VAC / TEMP</span><span class="dval" id="v-cond">---</span></div>
       <div class="ctrl-row">
         <label>LOAD MWe:</label>
         <input class="ctrl-input" id="turb-load" value="1150" type="number" min="0" max="1200">
@@ -465,6 +474,10 @@ body::after {
         <button class="btn" onclick="cmdTurbLoadAdj(-10)">-10</button>
         <button class="btn" onclick="cmdTurbLoadAdj(10)">+10</button>
         <button class="btn" onclick="cmdTurbLoadAdj(50)">+50</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-breaker" onclick="toggleBreaker()">BREAKER: OPEN</button>
+        <button class="btn" id="btn-gridmode" onclick="toggleGridMode()">GRID: TIED</button>
       </div>
       <div class="btn-row">
         <button class="btn" id="btn-gov-auto" onclick="toggleGovAuto()">GOV AUTO: ON</button>
@@ -660,7 +673,7 @@ body::after {
 
 <script>
 var autoRunning = true, simSpeed = 1, lastEventCount = 0, useAmerican = false;
-var toggleStates = {spray:false,turbine:true,offsite:true,diesel:false,rps:true,accum:true,rodAuto:false,
+var toggleStates = {spray:false,turbine:true,breaker:true,gridMode:true,offsite:true,diesel:false,rps:true,accum:true,rodAuto:false,
   rodScramOvr:false,przHtrAuto:true,przSprayAuto:true,govAuto:true,fwAuto:true,fwTripOvr:false};
 
 function apiPost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):'{}'})}
@@ -670,7 +683,8 @@ function apiGet(u){return fetch(u).then(function(r){return r.json();})}
 var TripBit={HighNeutronFluxRate:1,HighNeutronFlux:2,HighPressure:8,LowPressure:16,
   HighTemperature:32,LowFlow:64,HighContainmentPressure:128,LowSteamGeneratorLevel:256,
   HighSteamGeneratorLevel:512,TurbineTrip:1024,LossOfOffSitePower:2048,
-  HighStartupRate:16384,LowDNBRatio:32768};
+  HighStartupRate:16384,LowDNBRatio:32768,
+  TurbineOverspeedWarning:65536,TurbineUnderspeed:131072};
 
 function setBypassed(signal,bypassed){apiPost('/api/rps/bypass',{signal:signal,bypassed:bypassed});}
 
@@ -688,6 +702,8 @@ function syncBypassChecks(flags){
     ['byp-hisglv','bypl-hisglv',TripBit.HighSteamGeneratorLevel],
     ['byp-dnbr','bypl-dnbr',TripBit.LowDNBRatio],
     ['byp-turbtrp','bypl-turbtrp',TripBit.TurbineTrip],
+    ['byp-turbund','bypl-turbund',TripBit.TurbineUnderspeed],
+    ['byp-turbovr','bypl-turbovr',TripBit.TurbineOverspeedWarning],
     ['byp-loop','bypl-loop',TripBit.LossOfOffSitePower]
   ];
   for(var i=0;i<map.length;i++){
@@ -711,6 +727,8 @@ function cmdRcp(p,s){apiPost('/api/rcp',{pump:p,start:s})}
 function cmdPrzHtr(){apiPost('/api/pressurizer/heaters',{kw:+document.getElementById('prz-htr').value})}
 function toggleSpray(){toggleStates.spray=!toggleStates.spray;apiPost('/api/pressurizer/spray',{enabled:toggleStates.spray})}
 function toggleTurbine(){toggleStates.turbine=!toggleStates.turbine;apiPost('/api/turbine/online',{enabled:toggleStates.turbine})}
+function toggleBreaker(){toggleStates.breaker=!toggleStates.breaker;apiPost('/api/turbine/breaker',{enabled:toggleStates.breaker})}
+function toggleGridMode(){toggleStates.gridMode=!toggleStates.gridMode;apiPost('/api/turbine/gridmode',{enabled:toggleStates.gridMode})}
 function cmdTurbLoad(){apiPost('/api/turbine/load',{mwe:+document.getElementById('turb-load').value})}
 function cmdTurbLoadAdj(d){var e=document.getElementById('turb-load');e.value=Math.max(0,+e.value+d);cmdTurbLoad()}
 function cmdFwTemp(){apiPost('/api/sg/feedtemp',{tempC:+document.getElementById('sg-fwtemp').value})}
@@ -788,6 +806,9 @@ function renderState(s){
     setAlarm('a-hicont',tr.indexOf('HighContainment')!==-1);
     setAlarm('a-losglv',tr.indexOf('LowSteamGenerator')!==-1);
     setAlarm('a-turbtrp',tr.indexOf('TurbineTrip')!==-1);
+    setAlarm('a-turbund',s.turbine.underspeedAlarm);
+    setAlarm('a-turbovr',s.turbine.overspeedWarn);
+    setAlarm('a-bkralarm',s.turbine.breakerAlarm);
     setAlarm('a-loop',tr.indexOf('LossOfOffSite')!==-1);
     setAlarm('a-si',tr.indexOf('SafetyInjection')!==-1);
     setAlarm('a-manual',tr.indexOf('ManualTrip')!==-1);
@@ -842,11 +863,25 @@ function renderState(s){
 
     var tOn=s.turbine.online&&!s.turbine.tripped;
     setVal('v-turbstat',s.turbine.tripped?'TRIPPED':s.turbine.online?'ONLINE':'OFFLINE',s.turbine.tripped?'crit':s.turbine.online?'':'warn');
-    setVal('v-turbload',fmt(s.turbine.loadMW,1)+' MW');
-    setVal('v-turbspd',fmt(s.turbine.speedRPM,0)+' RPM');
+    var gridTied=s.turbine.gridTied;
+    setVal('v-gridmode',gridTied?'GRID TIED':'ISLANDED',gridTied?'':'warn');
+    var bkrCls=s.turbine.breakerClosed;
+    setVal('v-breaker',bkrCls?'CLOSED':'OPEN',bkrCls?'':'warn');
+    var spdPct=s.turbine.speedFrac*100;
+    var spdClr=s.turbine.underspeedAlarm?'crit':s.turbine.overspeedWarn?'warn':'';
+    setVal('v-turbspd',fmt(s.turbine.speedRPM,0)+' RPM ('+spdPct.toFixed(1)+' %)',spdClr);
+    var gf=s.turbine.gridFreqHz;
+    var freqClr=gf>0&&Math.abs(gf-60)>1.0?'crit':gf>0&&Math.abs(gf-60)>0.5?'warn':'';
+    setVal('v-gridfreq',gf>0?fmt(gf,3)+' Hz':'---',freqClr);
     setVal('v-turbthrt',fmt(s.turbine.throttle*100,1)+' %');
+    var mechClr=s.turbine.overspeedWarn?'warn':'';
+    setVal('v-mechpow',fmt(s.turbine.mechPowerMW,1)+' MW',mechClr);
     setVal('v-genout',fmt(s.electrical.generatorMW,1)+' MW','cyan');
     setVal('v-netmw',fmt(s.electrical.netMW,1)+' MW',s.electrical.netMW<0?'crit':'cyan');
+    setVal('v-turbstm',fmt(s.turbine.steamConsumptionKgPerS,1)+' kg/s');
+    setVal('v-hinlet',fmt(s.turbine.inletEnthalpyKJPerKg,1)+' kJ/kg');
+    setVal('v-hexhaust',fmt(s.turbine.exhaustEnthalpyKJPerKg,1)+' kJ/kg');
+    setVal('v-condduty',fmt(s.turbine.condenserHeatRejectionMW,1)+' MW');
     setVal('v-cond',uCVac(s.turbine.condenserVacuum)+' / '+uT(s.turbine.condenserTemp,1));
 
     setVal('v-fuelcl',uT(s.fuel.centrelineTemp,0),s.fuel.centrelineTemp>2500?'crit':s.fuel.centrelineTemp>2000?'warn':'');
@@ -889,6 +924,12 @@ function renderState(s){
     toggleStates.turbine=tOn;
     document.getElementById('btn-turb').textContent='TURBINE: '+(tOn?'ON':'OFF');
     document.getElementById('btn-turb').classList.toggle('active-on',tOn);
+    toggleStates.breaker=bkrCls;
+    document.getElementById('btn-breaker').textContent='BREAKER: '+(bkrCls?'CLOSED':'OPEN');
+    document.getElementById('btn-breaker').classList.toggle('active-on',bkrCls);
+    toggleStates.gridMode=gridTied;
+    document.getElementById('btn-gridmode').textContent='GRID: '+(gridTied?'TIED':'ISLAND');
+    document.getElementById('btn-gridmode').classList.toggle('active-on',gridTied);
     toggleStates.offsite=s.electrical.offSitePower;
     document.getElementById('btn-offsite').textContent='OFFSITE: '+(s.electrical.offSitePower?'ON':'OFF');
     document.getElementById('btn-offsite').classList.toggle('active-on',s.electrical.offSitePower);

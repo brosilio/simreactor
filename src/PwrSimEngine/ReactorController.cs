@@ -118,14 +118,38 @@ namespace PwrSimulator
             if (s.TurbineGovernorAutoEnabled == 0) return;
             if (s.TurbineOnline == 0 || s.TurbineTripFlag == 1) return;
 
-            double steamAvailable = s.SgSteamFlowKgPerS;
-            double steamForTarget = s.TurbinePowerTarget
-                                    / (_design.TurbineEfficiency * _design.RatedThermalPowerMW + 1e-6)
-                                    * steamAvailable;
-            double throttleTarget = Math.Clamp(
-                steamForTarget / (steamAvailable + 1e-6), 0, 1);
-
             double tauGov = _design.TurbineTimeConstantS;
+            double throttleTarget;
+
+            if (s.GeneratorBreakerClosed == 0)
+            {
+                // Runup mode (breaker open): ramp throttle gently to approach rated speed.
+                // Proportional on speed error; back off as speed approaches 1.0.
+                double speedError = 1.0 - s.TurbineSpeedFraction;
+                throttleTarget = Math.Clamp(speedError * 5.0, 0, 0.30);
+            }
+            else if (s.GridTiedMode == 1)
+            {
+                // Grid-tied: throttle tracks MW setpoint with 5% droop correction.
+                // Δthrottle from droop = (f_rated − f_grid) / (f_rated × R)
+                double freqDroop = (60.0 - s.GridFrequencyHz) / (60.0 * _design.TurbineGovernorDroop);
+                double powerFraction = s.TurbinePowerTarget / (_design.RatedElectricalMW + 1e-6);
+                throttleTarget = Math.Clamp(powerFraction + freqDroop, 0, 1);
+            }
+            else
+            {
+                // Islanded isochronous mode: governor holds rated speed (60 Hz).
+                // Proportional-integral on speed error; integral provides zero steady-state offset.
+                double speedError = 1.0 - s.TurbineSpeedFraction;
+                const double Kp = 4.0; // proportional gain (pu throttle per pu speed error)
+                const double Ki = 1.0; // integral gain (pu throttle per pu·s speed error)
+                double powerFraction = s.TurbinePowerTarget / (_design.RatedElectricalMW + 1e-6);
+                // PI: base from load setpoint + corrections from speed error
+                s.IsochrIntegrator = Math.Clamp(
+                    s.IsochrIntegrator + Ki * speedError * dt, -0.5, 0.5);
+                throttleTarget = Math.Clamp(powerFraction + Kp * speedError + s.IsochrIntegrator, 0, 1);
+            }
+
             s.TurbineThrottlePosition += (throttleTarget - s.TurbineThrottlePosition)
                                           * dt / tauGov;
             s.TurbineThrottlePosition = Math.Clamp(s.TurbineThrottlePosition, 0, 1);
@@ -229,6 +253,14 @@ namespace PwrSimulator
             // turbine trip (only meaningful when turbine was supplying load)
             if (s.TurbineTripFlag == 1 && totalPower > 0.15)
                 trips |= TripSignal.TurbineTrip;
+
+            // turbine overspeed warning (105–110% speed, before emergency OST)
+            if (s.TurbineOverspeedWarn == 1 && s.TurbineOnline == 1 && totalPower > 0.1)
+                trips |= TripSignal.TurbineOverspeedWarning;
+
+            // turbine underspeed (< 95% rated while online at power — loss of load sink)
+            if (s.TurbineUnderspeedAlarm == 1 && s.TurbineOnline == 1 && totalPower > 0.1)
+                trips |= TripSignal.TurbineUnderspeed;
 
             // loss of off-site power (only trip if above 2% power)
             if (s.OffSitePowerAvailable == 0 && totalPower > 0.02)

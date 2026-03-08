@@ -268,6 +268,10 @@ namespace PwrSimWeb
 
             app.MapPost("/api/turbine/online", (ToggleCmd cmd) =>
             { lock (_lock) _engine.CommandTurbineOnline(cmd.Enabled); return Results.Ok(); });
+            app.MapPost("/api/turbine/breaker", (ToggleCmd cmd) =>
+            { lock (_lock) _engine.CommandGeneratorBreaker(cmd.Enabled); return Results.Ok(); });
+            app.MapPost("/api/turbine/gridmode", (ToggleCmd cmd) =>
+            { lock (_lock) _engine.CommandGridMode(cmd.Enabled); return Results.Ok(); });
             app.MapPost("/api/turbine/load", (TurbineLoadCmd cmd) =>
             { lock (_lock) _engine.CommandTurbineLoad(cmd.Mwe); return Results.Ok(); });
 
@@ -411,11 +415,23 @@ namespace PwrSimWeb
                     fwTimeConstantS = s.FwTimeConstantS },
                 turbine = new {
                     online = s.TurbineOnline == 1, tripped = s.TurbineTripFlag == 1,
-                    loadMW = s.TurbineLoadMW, speedRPM = s.TurbineSpeedRPM,
+                    breakerClosed = s.GeneratorBreakerClosed == 1,
+                    gridTied = s.GridTiedMode == 1,
+                    loadMW = s.TurbineLoadMW, mechPowerMW = s.TurbineMechanicalPowerMW,
+                    speedRPM = s.TurbineSpeedRPM,
                     speedFrac = s.TurbineSpeedFraction, throttle = s.TurbineThrottlePosition,
-                    powerTarget = s.TurbinePowerTarget, condenserTemp = s.CondenserTempC,
+                    powerTarget = s.TurbinePowerTarget,
+                    gridFreqHz = s.GridFrequencyHz,
+                    inletEnthalpyKJPerKg = s.TurbineInletEnthalpyKJPerKg,
+                    exhaustEnthalpyKJPerKg = s.TurbineExhaustEnthalpyKJPerKg,
+                    steamConsumptionKgPerS = s.TurbineSteamConsumptionKgPerS,
+                    condenserHeatRejectionMW = s.CondenserHeatRejectionMW,
+                    condenserTemp = s.CondenserTempC,
                     condenserVacuum = s.CondenserVacuumKPa,
-                    governorAutoEnabled = s.TurbineGovernorAutoEnabled == 1 },
+                    governorAutoEnabled = s.TurbineGovernorAutoEnabled == 1,
+                    underspeedAlarm = s.TurbineUnderspeedAlarm == 1,
+                    overspeedWarn = s.TurbineOverspeedWarn == 1,
+                    breakerAlarm = s.TurbineBreakerAlarm == 1 },
                 electrical = new {
                     generatorMW = s.GeneratorOutputMW, housekeepingMW = s.HousekeepingLoadMW,
                     netMW = s.NetElectricalMW, offSitePower = s.OffSitePowerAvailable == 1,
