@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PWR REACTOR CONTROL TERMINAL</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+
+:root {
+  --grn: #33ff33;
+  --grn-dim: #1a9c1a;
+  --grn-dark: #0d4f0d;
+  --grn-glow: #33ff3388;
+  --amber: #ffaa00;
+  --red: #ff3333;
+  --red-dim: #991a1a;
+  --cyan: #33ffcc;
+  --bg: #050a05;
+  --panel-bg: #081208;
+  --panel-border: #1a5c1a;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--grn);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 12px;
+  height: 100%;
+  overflow-x: hidden;
+}
+
+/* CRT scanlines */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px);
+  pointer-events: none; z-index: 9999;
+}
+/* CRT vignette */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.6) 100%);
+  pointer-events: none; z-index: 9998;
+}
+
+@keyframes flicker {
+  0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.8} 94%{opacity:1} 97%{opacity:0.9} 98%{opacity:1}
+}
+#crt { animation: flicker 8s infinite; min-height: 100vh; }
+
+@keyframes alarm-blink { 50% { opacity: 0.2; } }
+
+/* Header */
+#header {
+  background: var(--grn-dark);
+  border-bottom: 2px solid var(--grn);
+  padding: 6px 16px;
+  display: flex; justify-content: space-between; align-items: center;
+  text-shadow: 0 0 10px var(--grn-glow);
+  position: sticky; top: 0; z-index: 100;
+}
+#header h1 { font-family: 'VT323', monospace; font-size: 22px; letter-spacing: 4px; text-transform: uppercase; }
+#header .hdr-info { font-size: 11px; color: var(--grn-dim); }
+#header .hdr-info span { color: var(--grn); }
+
+/* Alarm bar */
+#alarm-bar {
+  background: #0a0000; border-bottom: 1px solid #331a00;
+  padding: 4px 16px; display: flex; gap: 8px; flex-wrap: wrap; min-height: 28px; align-items: center;
+}
+.alarm-tag { font-size: 10px; padding: 2px 8px; border: 1px solid; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; }
+.alarm-tag.active { background: var(--red); border-color: var(--red); color: #000; animation: alarm-blink 0.5s step-end infinite; }
+.alarm-tag.clear { border-color: var(--grn-dark); color: var(--grn-dark); }
+
+/* Main grid */
+#main { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; padding: 4px; }
+@media (max-width: 1200px) { #main { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 800px)  { #main { grid-template-columns: 1fr; } }
+
+/* Panels */
+.panel { background: var(--panel-bg); border: 1px solid var(--panel-border); }
+.panel-title {
+  background: var(--grn-dark); padding: 3px 10px;
+  font-family: 'VT323', monospace; font-size: 15px; letter-spacing: 2px; text-transform: uppercase;
+  border-bottom: 1px solid var(--panel-border); text-shadow: 0 0 8px var(--grn-glow);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.panel-body { padding: 8px 10px; }
+
+/* Data rows */
+.drow { display: flex; justify-content: space-between; padding: 1px 0; border-bottom: 1px solid #0d1f0d; }
+.drow:last-child { border-bottom: none; }
+.dlabel { color: var(--grn-dim); font-size: 11px; }
+.dval { font-family: 'VT323', monospace; font-size: 15px; text-shadow: 0 0 6px var(--grn-glow); min-width: 100px; text-align: right; }
+.dval.warn { color: var(--amber); text-shadow: 0 0 6px rgba(255,170,0,0.5); }
+.dval.crit { color: var(--red); text-shadow: 0 0 8px rgba(255,0,0,0.5); animation: alarm-blink 0.8s step-end infinite; }
+.dval.cyan { color: var(--cyan); text-shadow: 0 0 6px rgba(51,255,204,0.5); }
+
+/* Bar gauges */
+.bar-gauge { height: 10px; background: #0d1f0d; border: 1px solid var(--grn-dark); margin: 3px 0; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--grn); box-shadow: 0 0 6px var(--grn-glow); transition: width 0.3s; }
+.bar-fill.warn { background: var(--amber); box-shadow: 0 0 6px rgba(255,170,0,0.4); }
+.bar-fill.crit { background: var(--red); box-shadow: 0 0 6px rgba(255,0,0,0.4); }
+
+/* Buttons */
+.btn {
+  font-family: 'Share Tech Mono', monospace; font-size: 11px; padding: 4px 10px;
+  border: 1px solid var(--grn-dim); background: var(--grn-dark); color: var(--grn);
+  cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: all 0.1s;
+}
+.btn:hover { background: var(--grn-dim); color: #000; box-shadow: 0 0 10px var(--grn-glow); }
+.btn:active { transform: scale(0.96); }
+.btn.danger { border-color: var(--red-dim); color: var(--red); background: #1a0808; }
+.btn.danger:hover { background: var(--red); color: #000; box-shadow: 0 0 10px rgba(255,0,0,0.5); }
+.btn.amber { border-color: #665500; color: var(--amber); background: #1a1200; }
+.btn.amber:hover { background: var(--amber); color: #000; }
+.btn.active-on { background: var(--grn); color: #000; box-shadow: 0 0 8px var(--grn-glow); }
+.btn-row { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; }
+
+/* Inputs */
+.ctrl-input {
+  font-family: 'VT323', monospace; font-size: 14px; background: #060d06;
+  border: 1px solid var(--grn-dark); color: var(--grn); padding: 3px 6px; width: 80px; text-align: right; outline: none;
+}
+.ctrl-input:focus { border-color: var(--grn); box-shadow: 0 0 6px var(--grn-glow); }
+.ctrl-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.ctrl-row label { color: var(--grn-dim); font-size: 11px; flex-shrink: 0; min-width: 70px; }
+
+/* Rod display */
+.rod-display { display: flex; gap: 10px; justify-content: center; margin: 6px 0; }
+.rod-col { text-align: center; }
+.rod-col .rod-label { font-size: 10px; color: var(--grn-dim); margin-bottom: 2px; }
+.rod-bar-outer { width: 24px; height: 80px; background: #0d1f0d; border: 1px solid var(--grn-dark); position: relative; margin: 0 auto; }
+.rod-bar-inner { position: absolute; bottom: 0; width: 100%; background: var(--grn); box-shadow: 0 0 4px var(--grn-glow); transition: height 0.5s; }
+.rod-val { font-family: 'VT323', monospace; font-size: 14px; margin-top: 2px; }
+
+/* RCP indicators */
+.rcp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0; }
+.rcp-box { border: 1px solid var(--grn-dark); padding: 4px 6px; text-align: center; font-size: 11px; }
+.rcp-box .rcp-id { font-family: 'VT323', monospace; font-size: 15px; }
+.rcp-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.rcp-indicator.on { background: var(--grn); box-shadow: 0 0 6px var(--grn-glow); }
+.rcp-indicator.off { background: var(--grn-dark); }
+.rcp-indicator.coast { background: var(--amber); box-shadow: 0 0 4px rgba(255,170,0,0.5); }
+
+/* Event log */
+#event-log { background: #040804; border: 1px solid var(--grn-dark); height: 150px; overflow-y: auto; font-size: 10px; padding: 4px; scrollbar-width: thin; scrollbar-color: var(--grn-dark) var(--bg); }
+#event-log .evt { padding: 1px 0; border-bottom: 1px solid #060d06; }
+#event-log .evt-time { color: var(--grn-dark); }
+#event-log .evt-cat { color: var(--amber); }
+
+/* Reactivity bars */
+.rho-bar-container { margin: 2px 0; }
+.rho-bar-label { font-size: 10px; color: var(--grn-dim); display: flex; justify-content: space-between; }
+.rho-bar-track { height: 6px; background: #0d1f0d; position: relative; margin: 1px 0; }
+.rho-bar-zero { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--grn-dark); }
+.rho-bar-fill { position: absolute; top: 0; bottom: 0; background: var(--grn); box-shadow: 0 0 3px var(--grn-glow); }
+.rho-bar-fill.neg { background: var(--red); box-shadow: 0 0 3px rgba(255,0,0,0.3); }
+
+/* Time controls */
+#time-controls {
+  display: flex; align-items: center; gap: 6px; padding: 4px 16px;
+  background: var(--panel-bg); border-bottom: 1px solid var(--panel-border);
+}
+#time-controls label { font-size: 11px; color: var(--grn-dim); }
+
+.span2 { grid-column: span 2; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--grn-dark); }
+</style>
+</head>
+<body>
+<div id="crt">
+
+<div id="header">
+  <h1>&#x269B; PWR REACTOR CONTROL TERMINAL</h1>
+  <div class="hdr-info">
+    SIM TIME: <span id="h-time">0.0s</span> &nbsp;|&nbsp;
+    TICK: <span id="h-tick">0</span> &nbsp;|&nbsp;
+    MODE: <span id="h-mode">---</span>
+  </div>
+</div>
+
+<div id="alarm-bar">
+  <span style="color:#664400;font-size:10px;letter-spacing:2px;">ANNUNCIATOR &#9654;</span>
+  <span class="alarm-tag clear" id="a-hiflux">HI FLUX</span>
+  <span class="alarm-tag clear" id="a-hirate">HI RATE</span>
+  <span class="alarm-tag clear" id="a-hipres">HI PRESS</span>
+  <span class="alarm-tag clear" id="a-lopres">LO PRESS</span>
+  <span class="alarm-tag clear" id="a-hitemp">HI TEMP</span>
+  <span class="alarm-tag clear" id="a-loflow">LO FLOW</span>
+  <span class="alarm-tag clear" id="a-hicont">HI CONT</span>
+  <span class="alarm-tag clear" id="a-losglv">LO SG LVL</span>
+  <span class="alarm-tag clear" id="a-turbtrp">TURB TRIP</span>
+  <span class="alarm-tag clear" id="a-loop">LOOP</span>
+  <span class="alarm-tag clear" id="a-si">SI</span>
+  <span class="alarm-tag clear" id="a-manual">MANUAL</span>
+  <span class="alarm-tag clear" id="a-hisur">HI SUR</span>
+  <span class="alarm-tag clear" id="a-dnbr">LO DNBR</span>
+  <span style="color:#664400;font-size:10px;letter-spacing:2px;margin-left:12px;">CORE &#9654;</span>
+  <span class="alarm-tag clear" id="a-clad">CLAD FAIL</span>
+  <span class="alarm-tag clear" id="a-fmelt">FUEL MELT</span>
+  <span class="alarm-tag clear" id="a-cdmg">CORE DMG</span>
+  <span class="alarm-tag clear" id="a-meltdown" style="font-size:13px;padding:3px 12px;">MELTDOWN</span>
+  <span class="alarm-tag clear" id="a-vessel">VESSEL FAIL</span>
+  <span class="alarm-tag clear" id="a-h2">HI H&#8322;</span>
+</div>
+
+<div id="time-controls">
+  <label>SIMULATION:</label>
+  <button class="btn active-on" id="btn-autotick" onclick="toggleAutoTick()">&#9654; RUN</button>
+  <label>SPEED:</label>
+  <button class="btn" onclick="setSpeed(0.1)">0.1x</button>
+  <button class="btn" onclick="setSpeed(0.5)">0.5x</button>
+  <button class="btn active-on" onclick="setSpeed(1)">1x</button>
+  <button class="btn" onclick="setSpeed(5)">5x</button>
+  <button class="btn" onclick="setSpeed(10)">10x</button>
+  <button class="btn" onclick="setSpeed(50)">50x</button>
+  <button class="btn" onclick="setSpeed(100)">100x</button>
+  <span style="margin-left:16px"></span>
+  <label>INIT:</label>
+  <button class="btn" onclick="cmdInit('/api/init/cold')">COLD S/D</button>
+  <button class="btn" onclick="cmdInit('/api/init/hzp')">HOT ZERO</button>
+  <button class="btn" onclick="cmdInit('/api/init/full')">FULL POWER</button>
+  <span style="margin-left:16px"></span>
+  <button class="btn amber" id="btn-units" onclick="toggleUnits()">UNITS: SI</button>
+  <span style="margin-left:4px"></span>
+  <button class="btn danger" style="font-size:13px;padding:4px 16px;" onclick="apiPost('/api/trip')">&#9762; SCRAM</button>
+  <button class="btn amber" onclick="apiPost('/api/trip/reset')">RESET TRIP</button>
+</div>
+
+<div id="main">
+
+  <!-- CORE NEUTRONICS -->
+  <div class="panel">
+    <div class="panel-title">CORE NEUTRONICS</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">THERMAL POWER</span><span class="dval" id="v-power">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-power" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">POWER (MW-th)</span><span class="dval" id="v-powermw">---</span></div>
+      <div class="drow"><span class="dlabel">NEUTRON POP</span><span class="dval" id="v-npop">---</span></div>
+      <div class="drow"><span class="dlabel">STARTUP RATE</span><span class="dval" id="v-sur">---</span></div>
+      <div class="drow"><span class="dlabel">DECAY HEAT</span><span class="dval" id="v-decay">---</span></div>
+      <div class="drow"><span class="dlabel">TOTAL POWER MW</span><span class="dval" id="v-totmw">---</span></div>
+    </div>
+  </div>
+
+  <!-- REACTIVITY -->
+  <div class="panel">
+    <div class="panel-title">REACTIVITY (PCM)</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">&#x3C1; TOTAL</span><span class="dval" id="v-rho-total">---</span></div>
+      <div id="rho-bars"></div>
+    </div>
+  </div>
+
+  <!-- CONTROL RODS -->
+  <div class="panel">
+    <div class="panel-title">CONTROL RODS <span style="font-size:11px;" id="rod-auto-status">MANUAL</span></div>
+    <div class="panel-body">
+      <div class="rod-display" id="rod-display"></div>
+      <div class="ctrl-row">
+        <label>BANK:</label>
+        <select class="ctrl-input" id="rod-bank" style="width:50px">
+          <option value="0">A</option><option value="1">B</option>
+          <option value="2">C</option><option value="3" selected>D</option>
+        </select>
+        <label>TARGET:</label>
+        <input class="ctrl-input" id="rod-target" value="200" type="number" min="0" max="228">
+        <button class="btn" onclick="cmdRodBank()">SET</button>
+      </div>
+      <div class="ctrl-row">
+        <label>SPEED:</label>
+        <input class="ctrl-input" id="rod-speed" value="48" type="number" min="0" max="72" style="width:50px">
+        <button class="btn" onclick="cmdRodSpeed()">SET</button>
+        <span style="width:10px"></span>
+        <button class="btn" id="btn-rod-auto" onclick="toggleRodAuto()">AUTO: OFF</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="cmdRodMove('withdraw',10)">&#9650; +10</button>
+        <button class="btn" onclick="cmdRodMove('withdraw',1)">&#9650; +1</button>
+        <button class="btn" onclick="cmdRodMove('insert',1)">&#9660; -1</button>
+        <button class="btn" onclick="cmdRodMove('insert',10)">&#9660; -10</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn danger" id="btn-rod-scram-ovr" onclick="toggleRodScramOvr()" title="Allow rod ops during scram">SCRAM OVR: OFF</button>
+      </div>
+      <div class="ctrl-row">
+        <label>AUTO GAIN:</label>
+        <input class="ctrl-input" id="rod-auto-gain" value="2.0" type="number" step="0.5" min="0" style="width:55px">
+        <button class="btn" onclick="cmdRodAutoGain()">SET</button>
+        <label style="margin-left:6px">DEADBAND:</label>
+        <input class="ctrl-input" id="rod-auto-db" value="0.5" type="number" step="0.1" min="0" style="width:45px">
+        <button class="btn" onclick="cmdRodAutoDb()">SET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRIMARY COOLANT -->
+  <div class="panel">
+    <div class="panel-title">PRIMARY COOLANT SYSTEM</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">PRESSURE</span><span class="dval" id="v-ppres">---</span></div>
+      <div class="drow"><span class="dlabel">T-AVG</span><span class="dval" id="v-tavg">---</span></div>
+      <div class="drow"><span class="dlabel">T-COLD (IN)</span><span class="dval" id="v-tcold">---</span></div>
+      <div class="drow"><span class="dlabel">T-HOT (OUT)</span><span class="dval" id="v-thot">---</span></div>
+      <div class="drow"><span class="dlabel">DELTA-T</span><span class="dval" id="v-dt">---</span></div>
+      <div class="drow"><span class="dlabel">FLOW</span><span class="dval" id="v-flow">---</span></div>
+      <div class="drow"><span class="dlabel">VOID FRAC</span><span class="dval" id="v-void">---</span></div>
+      <div class="drow"><span class="dlabel">SUBCOOL MARGIN</span><span class="dval" id="v-subcool">---</span></div>
+      <div class="drow"><span class="dlabel">DENSITY</span><span class="dval" id="v-density">---</span></div>
+    </div>
+  </div>
+
+  <!-- PRESSURIZER -->
+  <div class="panel">
+    <div class="panel-title">PRESSURIZER</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">PRESSURE</span><span class="dval" id="v-przpres">---</span></div>
+      <div class="drow"><span class="dlabel">TEMPERATURE</span><span class="dval" id="v-prztemp">---</span></div>
+      <div class="drow"><span class="dlabel">LEVEL</span><span class="dval" id="v-przlvl">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-przlvl" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">HEATER POWER</span><span class="dval" id="v-przhtr">---</span></div>
+      <div class="drow"><span class="dlabel">SPRAY</span><span class="dval" id="v-przspray">---</span></div>
+      <div class="drow"><span class="dlabel">PORV</span><span class="dval" id="v-porv">---</span></div>
+      <div class="drow"><span class="dlabel">SAFETY VALVE</span><span class="dval" id="v-sftyv">---</span></div>
+      <div class="ctrl-row">
+        <label>HEATER kW:</label>
+        <input class="ctrl-input" id="prz-htr" value="0" type="number" min="0" max="1800">
+        <button class="btn" onclick="cmdPrzHtr()">SET</button>
+        <button class="btn" id="btn-spray" onclick="toggleSpray()">SPRAY</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-prz-htr-auto" onclick="togglePrzHtrAuto()">HTR AUTO: ON</button>
+        <button class="btn" id="btn-prz-spray-auto" onclick="togglePrzSprayAuto()">SPRAY AUTO: ON</button>
+      </div>
+      <div class="ctrl-row">
+        <label>P SETPT:</label>
+        <input class="ctrl-input" id="prz-setpt" value="15.51" type="number" step="0.1" min="5" max="20" style="width:55px">
+        <span class="dval" style="font-size:10px;margin-left:2px">MPa</span>
+        <button class="btn" onclick="cmdPrzSetpt()">SET</button>
+      </div>
+      <div class="ctrl-row">
+        <label>GAIN:</label>
+        <input class="ctrl-input" id="prz-auto-gain" value="10" type="number" step="1" min="0" style="width:45px">
+        <label style="margin-left:6px">DEAD:</label>
+        <input class="ctrl-input" id="prz-auto-db" value="0.07" type="number" step="0.01" min="0" style="width:50px">
+        <span class="dval" style="font-size:10px;margin-left:2px">MPa</span>
+        <button class="btn" onclick="cmdPrzAutoParams()">SET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BORON / CVCS -->
+  <div class="panel">
+    <div class="panel-title">CVCS / BORON</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">BORON CONC</span><span class="dval" id="v-boron">---</span></div>
+      <div class="drow"><span class="dlabel">BORON TARGET</span><span class="dval" id="v-borontgt">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-boron" style="width:0%"></div></div>
+      <div class="ctrl-row">
+        <label>TARGET ppm:</label>
+        <input class="ctrl-input" id="boron-tgt" value="800" type="number" min="0" max="3000">
+        <button class="btn" onclick="cmdBoron()">SET</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="cmdBoronAdj(-50)">-50 ppm</button>
+        <button class="btn" onclick="cmdBoronAdj(-10)">-10</button>
+        <button class="btn" onclick="cmdBoronAdj(10)">+10</button>
+        <button class="btn" onclick="cmdBoronAdj(50)">+50 ppm</button>
+      </div>
+      <button class="btn danger" style="width:100%;margin-top:4px" onclick="apiPost('/api/boron/emergency')">&#9888; EMERGENCY BORATION</button>
+    </div>
+  </div>
+
+  <!-- STEAM GENERATOR -->
+  <div class="panel">
+    <div class="panel-title">STEAM GENERATOR</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">PRIM IN TEMP</span><span class="dval" id="v-sgtin">---</span></div>
+      <div class="drow"><span class="dlabel">PRIM OUT TEMP</span><span class="dval" id="v-sgtout">---</span></div>
+      <div class="drow"><span class="dlabel">SEC PRESSURE</span><span class="dval" id="v-sgpres">---</span></div>
+      <div class="drow"><span class="dlabel">STEAM TEMP</span><span class="dval" id="v-sgsteam">---</span></div>
+      <div class="drow"><span class="dlabel">SG LEVEL</span><span class="dval" id="v-sglvl">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-sglvl" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">STEAM FLOW</span><span class="dval" id="v-sgstmflw">---</span></div>
+      <div class="drow"><span class="dlabel">FEED FLOW</span><span class="dval" id="v-sgfwflw">---</span></div>
+      <div class="ctrl-row">
+        <label>FW TEMP &deg;C:</label>
+        <input class="ctrl-input" id="sg-fwtemp" value="227" type="number">
+        <button class="btn" onclick="cmdFwTemp()">SET</button>
+      </div>
+      <div class="ctrl-row">
+        <label>FOULING:</label>
+        <input class="ctrl-input" id="sg-foul" value="1.0" type="number" step="0.05" min="0.1" max="1">
+        <button class="btn" onclick="cmdFouling()">SET</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-fw-auto" onclick="toggleFwAuto()">FW AUTO: ON</button>
+        <button class="btn danger" id="btn-fw-trip-ovr" onclick="toggleFwTripOvr()" title="Run feedwater despite pump trip">PUMP OVR: OFF</button>
+      </div>
+      <div class="ctrl-row">
+        <label>LVL SP:</label>
+        <input class="ctrl-input" id="fw-lvl-sp" value="0.50" type="number" step="0.05" min="0.1" max="0.9" style="width:50px">
+        <button class="btn" onclick="cmdFwLvlSp()">SET</button>
+        <label style="margin-left:6px">LVL GAIN:</label>
+        <input class="ctrl-input" id="fw-lvl-gain" value="50" type="number" step="5" min="0" style="width:45px">
+        <button class="btn" onclick="cmdFwLvlGain()">SET</button>
+      </div>
+      <div class="ctrl-row">
+        <label>FLOW GAIN:</label>
+        <input class="ctrl-input" id="fw-flow-gain" value="0.5" type="number" step="0.1" min="0" style="width:45px">
+        <button class="btn" onclick="cmdFwFlowGain()">SET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TURBINE / GENERATOR -->
+  <div class="panel">
+    <div class="panel-title">TURBINE-GENERATOR</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">STATUS</span><span class="dval" id="v-turbstat">---</span></div>
+      <div class="drow"><span class="dlabel">LOAD</span><span class="dval" id="v-turbload">---</span></div>
+      <div class="drow"><span class="dlabel">SPEED</span><span class="dval" id="v-turbspd">---</span></div>
+      <div class="drow"><span class="dlabel">THROTTLE</span><span class="dval" id="v-turbthrt">---</span></div>
+      <div class="drow"><span class="dlabel">GEN OUTPUT</span><span class="dval cyan" id="v-genout">---</span></div>
+      <div class="drow"><span class="dlabel">NET ELECTRICAL</span><span class="dval cyan" id="v-netmw">---</span></div>
+      <div class="drow"><span class="dlabel">CONDENSER</span><span class="dval" id="v-cond">---</span></div>
+      <div class="ctrl-row">
+        <label>LOAD MWe:</label>
+        <input class="ctrl-input" id="turb-load" value="1150" type="number" min="0" max="1200">
+        <button class="btn" onclick="cmdTurbLoad()">SET</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-turb" onclick="toggleTurbine()">TURBINE: ON</button>
+        <button class="btn" onclick="cmdTurbLoadAdj(-50)">-50</button>
+        <button class="btn" onclick="cmdTurbLoadAdj(-10)">-10</button>
+        <button class="btn" onclick="cmdTurbLoadAdj(10)">+10</button>
+        <button class="btn" onclick="cmdTurbLoadAdj(50)">+50</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-gov-auto" onclick="toggleGovAuto()">GOV AUTO: ON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FUEL INTEGRITY -->
+  <div class="panel">
+    <div class="panel-title">FUEL / CLADDING INTEGRITY</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">FUEL CL TEMP</span><span class="dval" id="v-fuelcl">---</span></div>
+      <div class="drow"><span class="dlabel">FUEL AVG TEMP</span><span class="dval" id="v-fuelavg">---</span></div>
+      <div class="drow"><span class="dlabel">FUEL SURF TEMP</span><span class="dval" id="v-fuelsrf">---</span></div>
+      <div class="drow"><span class="dlabel">CLAD OUTER</span><span class="dval" id="v-cladout">---</span></div>
+      <div class="drow"><span class="dlabel">LINEAR HEAT RATE</span><span class="dval" id="v-lhr">---</span></div>
+      <div class="drow"><span class="dlabel">DNBR</span><span class="dval" id="v-dnbr">---</span></div>
+      <div class="drow"><span class="dlabel">FUEL MELT FRAC</span><span class="dval" id="v-melt">---</span></div>
+      <div class="drow"><span class="dlabel">CLAD OXIDE &mu;m</span><span class="dval" id="v-oxide">---</span></div>
+      <div class="drow"><span class="dlabel">BURNUP MWd/tHM</span><span class="dval" id="v-burnup">---</span></div>
+    </div>
+  </div>
+
+  <!-- RCPs -->
+  <div class="panel">
+    <div class="panel-title">REACTOR COOLANT PUMPS</div>
+    <div class="panel-body">
+      <div class="rcp-grid" id="rcp-grid"></div>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn" onclick="cmdRcp(0,true)">START 1</button>
+        <button class="btn" onclick="cmdRcp(1,true)">START 2</button>
+        <button class="btn" onclick="cmdRcp(2,true)">START 3</button>
+        <button class="btn" onclick="cmdRcp(3,true)">START 4</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn danger" onclick="cmdRcp(0,false)">STOP 1</button>
+        <button class="btn danger" onclick="cmdRcp(1,false)">STOP 2</button>
+        <button class="btn danger" onclick="cmdRcp(2,false)">STOP 3</button>
+        <button class="btn danger" onclick="cmdRcp(3,false)">STOP 4</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ECCS -->
+  <div class="panel">
+    <div class="panel-title">ECCS / SAFETY SYSTEMS</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">ECCS STATUS</span><span class="dval" id="v-eccs">---</span></div>
+      <div class="drow"><span class="dlabel">HPI FLOW</span><span class="dval" id="v-hpi">---</span></div>
+      <div class="drow"><span class="dlabel">LPI FLOW</span><span class="dval" id="v-lpi">---</span></div>
+      <div class="drow"><span class="dlabel">ACCUM PRESS</span><span class="dval" id="v-accpres">---</span></div>
+      <div class="drow"><span class="dlabel">ACCUM VOL</span><span class="dval" id="v-accvol">---</span></div>
+      <div class="drow"><span class="dlabel">CONTAINMENT P</span><span class="dval" id="v-contpres">---</span></div>
+      <div class="drow"><span class="dlabel">CONTAINMENT T</span><span class="dval" id="v-conttemp">---</span></div>
+      <div class="btn-row">
+        <button class="btn danger" onclick="apiPost('/api/eccs/si')">SAFETY INJECTION</button>
+        <button class="btn" id="btn-accum" onclick="toggleAccum()">ACCUM: ALIGNED</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ELECTRICAL / PROTECTION -->
+  <div class="panel">
+    <div class="panel-title">ELECTRICAL / PROTECTION</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">OFF-SITE POWER</span><span class="dval" id="v-offsite">---</span></div>
+      <div class="drow"><span class="dlabel">DIESEL GEN</span><span class="dval" id="v-diesel">---</span></div>
+      <div class="drow"><span class="dlabel">RPS STATUS</span><span class="dval" id="v-rps">---</span></div>
+      <div class="btn-row">
+        <button class="btn" id="btn-offsite" onclick="toggleOffsite()">OFFSITE: ON</button>
+        <button class="btn" id="btn-diesel" onclick="toggleDiesel()">DIESEL: OFF</button>
+        <button class="btn amber" id="btn-rps" onclick="toggleRps()">RPS: ON</button>
+      </div>
+      <hr style="border-color:var(--grn-dark);margin:6px 0">
+      <div class="ctrl-row">
+        <label>BIAS (pcm):</label>
+        <input class="ctrl-input" id="bias-val" value="0" type="number">
+        <button class="btn" onclick="cmdBias()">SET</button>
+      </div>
+      <div class="ctrl-row">
+        <label>PEAKING Fq:</label>
+        <input class="ctrl-input" id="peaking-val" value="2.50" type="number" step="0.1" min="1" max="4">
+        <button class="btn" onclick="cmdPeaking()">SET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POISONS -->
+  <div class="panel">
+    <div class="panel-title">FISSION PRODUCT POISONS</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">I-135</span><span class="dval" id="v-i135">---</span></div>
+      <div class="drow"><span class="dlabel">Xe-135</span><span class="dval" id="v-xe135">---</span></div>
+      <div class="drow"><span class="dlabel">Xe-135 EQUIL</span><span class="dval" id="v-xeeq">---</span></div>
+      <div class="drow"><span class="dlabel">Xe / Xe_eq</span><span class="dval" id="v-xerat">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-xe" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">Pm-149</span><span class="dval" id="v-pm149">---</span></div>
+      <div class="drow"><span class="dlabel">Sm-149</span><span class="dval" id="v-sm149">---</span></div>
+      <div class="drow"><span class="dlabel">Sm / Sm_eq</span><span class="dval" id="v-smrat">---</span></div>
+    </div>
+  </div>
+
+  <!-- SAFETY MARGINS -->
+  <div class="panel">
+    <div class="panel-title">SAFETY MARGINS</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">DNBR &nbsp;<span style="font-size:9px">(min 1.30)</span></span><span class="dval" id="sm-dnbr">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="smbar-dnbr" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">SUBCOOLING &nbsp;<span style="font-size:9px" id="sm-lbl-sub">(min 10°C)</span></span><span class="dval" id="sm-sub">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="smbar-sub" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">PEAK LHR &nbsp;<span style="font-size:9px" id="sm-lbl-lhr">(max 44 kW/m)</span></span><span class="dval" id="sm-lhr">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="smbar-lhr" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">VOID FRAC &nbsp;<span style="font-size:9px">(max 1.0%)</span></span><span class="dval" id="sm-void">---</span></div>
+      <div class="drow"><span class="dlabel">HI PRESS MARGIN &nbsp;<span style="font-size:9px" id="sm-lbl-phi">16.55 MPa</span></span><span class="dval" id="sm-phi">---</span></div>
+      <div class="drow"><span class="dlabel">LO PRESS MARGIN &nbsp;<span style="font-size:9px" id="sm-lbl-plo">13.10 MPa</span></span><span class="dval" id="sm-plo">---</span></div>
+      <div class="drow"><span class="dlabel">TAVG MARGIN &nbsp;<span style="font-size:9px" id="sm-lbl-tavg">325.5°C</span></span><span class="dval" id="sm-tavg">---</span></div>
+      <div class="drow"><span class="dlabel">FUEL CL MARGIN &nbsp;<span style="font-size:9px" id="sm-lbl-fcl">2840°C</span></span><span class="dval" id="sm-fcl">---</span></div>
+    </div>
+  </div>
+
+  <!-- HEAT BALANCE -->
+  <div class="panel">
+    <div class="panel-title">HEAT BALANCE</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">FISSION POWER</span><span class="dval" id="hb-fis">---</span></div>
+      <div class="drow"><span class="dlabel">+ DECAY HEAT</span><span class="dval" id="hb-dec">---</span></div>
+      <div class="drow" style="border-top:1px solid var(--grn-dark);margin-top:2px;padding-top:2px"><span class="dlabel">TOTAL CORE OUT</span><span class="dval" id="hb-tot">---</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="hbbar-tot" style="width:0%"></div></div>
+      <div class="drow" style="margin-top:4px"><span class="dlabel">GENERATOR OUT</span><span class="dval cyan" id="hb-gen">---</span></div>
+      <div class="drow"><span class="dlabel">STATION AUX</span><span class="dval" id="hb-aux">---</span></div>
+      <div class="drow"><span class="dlabel">NET ELECTRICAL</span><span class="dval cyan" id="hb-net">---</span></div>
+      <div class="drow" style="border-top:1px solid var(--grn-dark);margin-top:2px;padding-top:2px"><span class="dlabel">CONDENSER REJ</span><span class="dval" id="hb-cond">---</span></div>
+      <div class="drow"><span class="dlabel">THERMAL EFF</span><span class="dval" id="hb-eff">---</span></div>
+    </div>
+  </div>
+
+  <!-- FUEL THERMAL PROFILE -->
+  <div class="panel">
+    <div class="panel-title">FUEL THERMAL PROFILE</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">CENTERLINE</span><span class="dval" id="fp-cl">---</span></div>
+      <div class="drow"><span class="dlabel">FUEL AVG</span><span class="dval" id="fp-avg">---</span></div>
+      <div class="drow"><span class="dlabel">FUEL SURFACE</span><span class="dval" id="fp-surf">---</span></div>
+      <div class="drow" style="padding-left:12px"><span class="dlabel" style="font-size:10px">&#x25BC; GAP &Delta;T</span><span class="dval" id="fp-gap">---</span></div>
+      <div class="drow"><span class="dlabel">CLAD INNER</span><span class="dval" id="fp-ci">---</span></div>
+      <div class="drow"><span class="dlabel">CLAD OUTER</span><span class="dval" id="fp-co">---</span></div>
+      <div class="drow"><span class="dlabel">COOLANT BULK</span><span class="dval" id="fp-cb">---</span></div>
+      <div style="border-top:1px solid var(--grn-dark);margin:3px 0"></div>
+      <div class="drow"><span class="dlabel">PEAKING Fq</span><span class="dval" id="fp-fq">---</span></div>
+      <div class="drow"><span class="dlabel">HOOP STRESS</span><span class="dval" id="fp-hoop">---</span></div>
+      <div class="drow"><span class="dlabel">SG FOULING</span><span class="dval" id="fp-foul">---</span></div>
+    </div>
+  </div>
+
+  <!-- PROTECTION FUNCTIONS -->
+  <div class="panel">
+    <div class="panel-title">PROTECTION FUNCTIONS</div>
+    <div class="panel-body" style="padding:4px 8px">
+      <div id="prot-table"></div>
+    </div>
+  </div>
+
+  <!-- CORE DAMAGE STATUS -->
+  <div class="panel">
+    <div class="panel-title">CORE DAMAGE STATUS</div>
+    <div class="panel-body">
+      <div class="drow"><span class="dlabel">DAMAGE STATE</span><span class="dval" id="v-cds">NORMAL</span></div>
+      <div class="drow"><span class="dlabel">DAMAGE FRACTION</span><span class="dval" id="v-cdf">0.00 %</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-cdf" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">Zr OXIDIZED</span><span class="dval" id="v-zrox">0.00 %</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-zrox" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">Zr-STEAM HEAT</span><span class="dval" id="v-exoheat">0 MW</span></div>
+      <div class="drow"><span class="dlabel">H&#8322; GENERATED</span><span class="dval" id="v-h2kg">0 kg</span></div>
+      <div class="drow"><span class="dlabel">CONT H&#8322;</span><span class="dval" id="v-h2pct">0.00 %</span></div>
+      <div class="bar-gauge"><div class="bar-fill" id="bar-h2" style="width:0%"></div></div>
+      <div class="drow"><span class="dlabel">FP RELEASE</span><span class="dval" id="v-fprel">0.00 %</span></div>
+      <div id="meltdown-banner" style="display:none;margin-top:8px;padding:6px;background:#330000;border:2px solid var(--red);text-align:center;font-size:13px;font-weight:bold;color:var(--red);letter-spacing:3px;animation:alarm-blink 0.8s step-end infinite">
+        &#9762; REACTOR CORE MELTDOWN &#9762;
+      </div>
+    </div>
+  </div>
+
+  <!-- EVENT LOG -->
+  <div class="panel span2">
+    <div class="panel-title">EVENT LOG <button class="btn" style="font-size:9px;padding:1px 6px" onclick="document.getElementById('event-log').innerHTML=''">CLEAR</button></div>
+    <div class="panel-body">
+      <div id="event-log"></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+var autoRunning = true, simSpeed = 1, lastEventCount = 0, useAmerican = false;
+var toggleStates = {spray:false,turbine:true,offsite:true,diesel:false,rps:true,accum:true,rodAuto:false,
+  rodScramOvr:false,przHtrAuto:true,przSprayAuto:true,govAuto:true,fwAuto:true,fwTripOvr:false};
+
+function apiGet(u){return fetch(u).then(function(r){return r.json();})}
+function apiPost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):'{}'})}
+
+function cmdRodBank(){apiPost('/api/rod/bank',{bank:+document.getElementById('rod-bank').value,target:+document.getElementById('rod-target').value})}
+function cmdRodSpeed(){apiPost('/api/rod/speed',{speed:+document.getElementById('rod-speed').value})}
+function cmdRodMove(d,s){apiPost('/api/rod/'+d,{bank:+document.getElementById('rod-bank').value,steps:s})}
+function toggleRodAuto(){toggleStates.rodAuto=!toggleStates.rodAuto;apiPost('/api/rod/auto',{enabled:toggleStates.rodAuto})}
+function cmdBoron(){apiPost('/api/boron',{ppm:+document.getElementById('boron-tgt').value})}
+function cmdBoronAdj(d){var e=document.getElementById('boron-tgt');e.value=Math.max(0,Math.min(3000,+e.value+d));cmdBoron()}
+function cmdInit(u){apiPost(u).then(function(){autoRunning=false;var b=document.getElementById('btn-autotick');b.textContent='\u23F8 PAUSE';b.classList.remove('active-on')})}
+function cmdRcp(p,s){apiPost('/api/rcp',{pump:p,start:s})}
+function cmdPrzHtr(){apiPost('/api/pressurizer/heaters',{kw:+document.getElementById('prz-htr').value})}
+function toggleSpray(){toggleStates.spray=!toggleStates.spray;apiPost('/api/pressurizer/spray',{enabled:toggleStates.spray})}
+function toggleTurbine(){toggleStates.turbine=!toggleStates.turbine;apiPost('/api/turbine/online',{enabled:toggleStates.turbine})}
+function cmdTurbLoad(){apiPost('/api/turbine/load',{mwe:+document.getElementById('turb-load').value})}
+function cmdTurbLoadAdj(d){var e=document.getElementById('turb-load');e.value=Math.max(0,+e.value+d);cmdTurbLoad()}
+function cmdFwTemp(){apiPost('/api/sg/feedtemp',{tempC:+document.getElementById('sg-fwtemp').value})}
+function cmdFouling(){apiPost('/api/sg/fouling',{factor:+document.getElementById('sg-foul').value})}
+function toggleOffsite(){toggleStates.offsite=!toggleStates.offsite;apiPost('/api/power/offsite',{enabled:toggleStates.offsite})}
+function toggleDiesel(){toggleStates.diesel=!toggleStates.diesel;apiPost('/api/power/diesel',{enabled:toggleStates.diesel})}
+function toggleRps(){toggleStates.rps=!toggleStates.rps;apiPost('/api/rps',{enabled:toggleStates.rps})}
+function toggleAccum(){toggleStates.accum=!toggleStates.accum;apiPost('/api/eccs/accumulators',{enabled:toggleStates.accum})}
+// ---- new auto-control commands ----
+function toggleRodScramOvr(){toggleStates.rodScramOvr=!toggleStates.rodScramOvr;apiPost('/api/rod/scramoverride',{enabled:toggleStates.rodScramOvr})}
+function cmdRodAutoGain(){apiPost('/api/rod/autogain',{value:+document.getElementById('rod-auto-gain').value})}
+function cmdRodAutoDb(){apiPost('/api/rod/autodeadband',{value:+document.getElementById('rod-auto-db').value})}
+function togglePrzHtrAuto(){toggleStates.przHtrAuto=!toggleStates.przHtrAuto;apiPost('/api/pressurizer/heaterauto',{enabled:toggleStates.przHtrAuto})}
+function togglePrzSprayAuto(){toggleStates.przSprayAuto=!toggleStates.przSprayAuto;apiPost('/api/pressurizer/sprayauto',{enabled:toggleStates.przSprayAuto})}
+function cmdPrzSetpt(){apiPost('/api/pressurizer/setpoint',{value:+document.getElementById('prz-setpt').value})}
+function cmdPrzAutoParams(){apiPost('/api/pressurizer/autogain',{value:+document.getElementById('prz-auto-gain').value});apiPost('/api/pressurizer/autodeadband',{value:+document.getElementById('prz-auto-db').value})}
+function toggleGovAuto(){toggleStates.govAuto=!toggleStates.govAuto;apiPost('/api/turbine/governorauto',{enabled:toggleStates.govAuto})}
+function toggleFwAuto(){toggleStates.fwAuto=!toggleStates.fwAuto;apiPost('/api/sg/fwauto',{enabled:toggleStates.fwAuto})}
+function toggleFwTripOvr(){toggleStates.fwTripOvr=!toggleStates.fwTripOvr;apiPost('/api/sg/fwtripoverride',{enabled:toggleStates.fwTripOvr})}
+function cmdFwLvlSp(){apiPost('/api/sg/fwlevelsetpoint',{value:+document.getElementById('fw-lvl-sp').value})}
+function cmdFwLvlGain(){apiPost('/api/sg/fwlevelgain',{value:+document.getElementById('fw-lvl-gain').value})}
+function cmdFwFlowGain(){apiPost('/api/sg/fwflowgain',{value:+document.getElementById('fw-flow-gain').value})}
+function cmdBias(){apiPost('/api/bias',{dkk:+document.getElementById('bias-val').value*1e-5})}
+function cmdPeaking(){apiPost('/api/peaking',{fq:+document.getElementById('peaking-val').value})}
+function toggleAutoTick(){autoRunning=!autoRunning;apiPost('/api/autotick',{enabled:autoRunning,speed:simSpeed});var b=document.getElementById('btn-autotick');b.textContent=autoRunning?'\u25B6 RUN':'\u23F8 PAUSE';b.classList.toggle('active-on',autoRunning)}
+function setSpeed(s){simSpeed=s;if(autoRunning)apiPost('/api/autotick',{enabled:true,speed:s});var bs=document.querySelectorAll('#time-controls .btn');for(var i=0;i<bs.length;i++){var b=bs[i];if(b.textContent.indexOf('x')!==-1&&b.textContent.indexOf(':') ===-1)b.classList.toggle('active-on',b.textContent===s+'x')}}
+
+function fmt(v,d){if(d===undefined)d=2;return typeof v==='number'?v.toFixed(d):'---'}
+function fmtE(v,d){if(d===undefined)d=3;return typeof v==='number'?v.toExponential(d):'---'}
+function setVal(id,t,c){var e=document.getElementById(id);if(!e)return;e.textContent=t;e.className='dval'+(c?' '+c:'')}
+function setBar(id,f,w,c){var e=document.getElementById(id);if(!e)return;var p=Math.max(0,Math.min(100,f*100));e.style.width=p+'%';e.className='bar-fill'+(f>=c?' crit':f>=w?' warn':'')}
+function setBarRaw(id,pct,cls){var e=document.getElementById(id);if(!e)return;e.style.width=Math.max(0,Math.min(100,pct))+'%';e.className='bar-fill'+(cls?' '+cls:'')}
+function fmtTime(sec){
+  if(isNaN(sec)||sec<0)return '---';
+  var tot=Math.floor(sec),fr=(sec-tot).toFixed(1).slice(1);
+  var s=tot%60,m=Math.floor(tot/60)%60,h=Math.floor(tot/3600)%24,d=Math.floor(tot/86400)%7,w=Math.floor(tot/604800);
+  if(w>0)return w+'w '+d+'d '+h+'h';
+  if(d>0)return d+'d '+h+'h '+m+'m';
+  if(h>0)return h+'h '+m+'m '+s+'s';
+  if(m>0)return m+'m '+s+'s';
+  return s+fr+'s';
+}
+function setAlarm(id,a){var e=document.getElementById(id);if(!e)return;e.className='alarm-tag '+(a?'active':'clear')}
+function setLbl(id,t){var e=document.getElementById(id);if(e)e.textContent=t;}
+
+// Unit conversion helpers — return formatted string with appropriate unit label
+function toggleUnits(){useAmerican=!useAmerican;var b=document.getElementById('btn-units');b.textContent='UNITS: '+(useAmerican?'US':'SI');b.classList.toggle('active-on',useAmerican);}
+function uT(c,d){return typeof c==='number'?(useAmerican?fmt(c*9/5+32,d!=null?d:0)+'\u00B0F':fmt(c,d!=null?d:1)+'\u00B0C'):'---';}
+function udT(dc,d){return typeof dc==='number'?(useAmerican?fmt(dc*9/5,d!=null?d:1)+'\u00B0F':fmt(dc,d!=null?d:1)+'\u00B0C'):'---';}
+function uP(mpa,d){return typeof mpa==='number'?(useAmerican?fmt(mpa*145.038,0)+' psi':fmt(mpa,d!=null?d:3)+' MPa'):'---';}
+function ukP(kpa){return typeof kpa==='number'?(useAmerican?fmt(kpa*0.145038,2)+' psi':fmt(kpa,1)+' kPa'):'---';}
+function uFlow(kgs){return typeof kgs==='number'?(useAmerican?fmt(kgs*2.20462,0)+' lb/s':fmt(kgs,0)+' kg/s'):'---';}
+function uVol(m3){return typeof m3==='number'?(useAmerican?fmt(m3*264.172,0)+' gal':fmt(m3,1)+' m\u00B3'):'---';}
+function uDens(d){return typeof d==='number'?(useAmerican?fmt(d*0.062428,2)+' lb/ft\u00B3':fmt(d,1)+' kg/m\u00B3'):'---';}
+function uLHR(Wm){return typeof Wm==='number'?(useAmerican?fmt(Wm/3280.84,2)+' kW/ft':fmt(Wm/1000,1)+' kW/m'):'---';}
+function uStress(mpa){return typeof mpa==='number'?(useAmerican?fmt(mpa*0.14504,1)+' ksi':fmt(mpa,0)+' MPa'):'---';}
+function uOxide(um){return typeof um==='number'?(useAmerican?fmt(um/25.4,3)+' mil':fmt(um,3)+' \u00B5m'):'---';}
+function uBurnup(b){return typeof b==='number'?(useAmerican?fmt(b/1000,3)+' GWd/MTU':fmt(b,0)+' MWd/t'):'---';}
+function uCVac(kpa){return typeof kpa==='number'?(useAmerican?fmt(kpa*0.2953,2)+' in\u00A0Hg':fmt(kpa,1)+' kPa'):'---';}
+
+function update(){
+  apiGet('/api/state').then(function(s){
+    if(!s)return;
+    document.getElementById('h-time').textContent=fmtTime(s.sim.time);
+    document.getElementById('h-tick').textContent=s.sim.tick;
+    var me=document.getElementById('h-mode');me.textContent=s.mode;
+    me.style.color=s.mode==='Tripped'?'var(--red)':s.mode==='SteadyState'?'var(--grn)':'var(--amber)';
+
+    var tr=s.trips||'';
+    setAlarm('a-hiflux',tr.indexOf('HighNeutronFlux')!==-1&&tr.indexOf('Rate')===-1);
+    setAlarm('a-hirate',tr.indexOf('HighNeutronFluxRate')!==-1);
+    setAlarm('a-hipres',tr.indexOf('HighPressure')!==-1);
+    setAlarm('a-lopres',tr.indexOf('LowPressure')!==-1);
+    setAlarm('a-hitemp',tr.indexOf('HighTemperature')!==-1);
+    setAlarm('a-loflow',tr.indexOf('LowFlow')!==-1);
+    setAlarm('a-hicont',tr.indexOf('HighContainment')!==-1);
+    setAlarm('a-losglv',tr.indexOf('LowSteamGenerator')!==-1);
+    setAlarm('a-turbtrp',tr.indexOf('TurbineTrip')!==-1);
+    setAlarm('a-loop',tr.indexOf('LossOfOffSite')!==-1);
+    setAlarm('a-si',tr.indexOf('SafetyInjection')!==-1);
+    setAlarm('a-manual',tr.indexOf('ManualTrip')!==-1);
+    setAlarm('a-hisur',tr.indexOf('HighStartupRate')!==-1);
+    setAlarm('a-dnbr',tr.indexOf('LowDNBR')!==-1);
+
+    var pf=s.neutronics.thermalPowerFrac,pp=pf*100;
+    setVal('v-power',fmt(pp,2)+' %',pp>105?'crit':pp>100?'warn':'');
+    setBar('bar-power',Math.min(pf,1.2)/1.2,0.83,0.91);
+    setVal('v-powermw',fmt(s.neutronics.thermalPowerMW,1)+' MW');
+    setVal('v-npop',fmtE(s.neutronics.neutronPop));
+    var sur=s.neutronics.startupRateDPM;
+    setVal('v-sur',fmt(sur,2)+' DPM',Math.abs(sur)>3?'warn':'');
+    setVal('v-decay',fmt(s.neutronics.decayHeatFrac*100,3)+' %');
+    setVal('v-totmw',fmt(s.neutronics.totalPowerMW,1)+' MW');
+
+    var rho=s.reactivity;
+    setVal('v-rho-total',fmt(rho.total,2)+' pcm',Math.abs(rho.total)>500?'crit':Math.abs(rho.total)>100?'warn':'');
+    updateRhoBars(rho);
+
+    setVal('v-ppres',uP(s.primary.pressureMPa),s.primary.pressureMPa>16?'crit':s.primary.pressureMPa<14?'warn':'');
+    setVal('v-tavg',uT(s.primary.tavg,1));
+    setVal('v-tcold',uT(s.primary.inletTemp,1));
+    setVal('v-thot',uT(s.primary.outletTemp,1));
+    setVal('v-dt',udT(s.primary.deltaT,1));
+    setVal('v-flow',fmt(s.primary.flowFraction*100,1)+' %',s.primary.flowFraction<0.87?'crit':s.primary.flowFraction<0.95?'warn':'');
+    setVal('v-void',fmt(s.primary.voidFraction*100,3)+' %',s.primary.voidFraction>0.01?'crit':'');
+    setVal('v-subcool',udT(s.primary.subcoolingMargin,1),s.primary.subcoolingMargin<10?'crit':s.primary.subcoolingMargin<20?'warn':'');
+    setVal('v-density',uDens(s.primary.density));
+
+    setVal('v-przpres',uP(s.pressurizer.pressureMPa));
+    setVal('v-prztemp',uT(s.pressurizer.tempC,1));
+    setVal('v-przlvl',fmt(s.pressurizer.level*100,1)+' %');
+    setBar('bar-przlvl',s.pressurizer.level,0.80,0.92);
+    setVal('v-przhtr',fmt(s.pressurizer.heaterKW,0)+' kW');
+    setVal('v-przspray',s.pressurizer.sprayOn?'ON':'OFF',s.pressurizer.sprayOn?'cyan':'');
+    setVal('v-porv',s.pressurizer.porvOpen?'OPEN':'SHUT',s.pressurizer.porvOpen?'crit':'');
+    setVal('v-sftyv',s.pressurizer.safetyValveOpen?'OPEN':'SHUT',s.pressurizer.safetyValveOpen?'crit':'');
+
+    setVal('v-boron',fmt(s.boron.ppm,0)+' ppm');
+    setVal('v-borontgt',fmt(s.boron.target,0)+' ppm');
+    setBar('bar-boron',s.boron.ppm/2000,0.6,0.9);
+
+    setVal('v-sgtin',uT(s.sg.primaryInletTemp,1));
+    setVal('v-sgtout',uT(s.sg.primaryOutletTemp,1));
+    setVal('v-sgpres',uP(s.sg.secondaryPressure));
+    setVal('v-sgsteam',uT(s.sg.steamTemp,1));
+    setVal('v-sglvl',fmt(s.sg.level*100,1)+' %',s.sg.level<0.2?'crit':s.sg.level<0.3?'warn':'');
+    setBar('bar-sglvl',s.sg.level,0.7,0.85);
+    setVal('v-sgstmflw',uFlow(s.sg.steamFlow));
+    setVal('v-sgfwflw',uFlow(s.sg.feedFlow));
+
+    var tOn=s.turbine.online&&!s.turbine.tripped;
+    setVal('v-turbstat',s.turbine.tripped?'TRIPPED':s.turbine.online?'ONLINE':'OFFLINE',s.turbine.tripped?'crit':s.turbine.online?'':'warn');
+    setVal('v-turbload',fmt(s.turbine.loadMW,1)+' MW');
+    setVal('v-turbspd',fmt(s.turbine.speedRPM,0)+' RPM');
+    setVal('v-turbthrt',fmt(s.turbine.throttle*100,1)+' %');
+    setVal('v-genout',fmt(s.electrical.generatorMW,1)+' MW','cyan');
+    setVal('v-netmw',fmt(s.electrical.netMW,1)+' MW',s.electrical.netMW<0?'crit':'cyan');
+    setVal('v-cond',uCVac(s.turbine.condenserVacuum)+' / '+uT(s.turbine.condenserTemp,1));
+
+    setVal('v-fuelcl',uT(s.fuel.centrelineTemp,0),s.fuel.centrelineTemp>2500?'crit':s.fuel.centrelineTemp>2000?'warn':'');
+    setVal('v-fuelavg',uT(s.fuel.averageTemp,0));
+    setVal('v-fuelsrf',uT(s.fuel.surfaceTemp,0));
+    setVal('v-cladout',uT(s.fuel.cladOuterTemp,0),s.fuel.cladOuterTemp>600?'crit':s.fuel.cladOuterTemp>400?'warn':'');
+    setVal('v-lhr',uLHR(s.fuel.linearHeatRate));
+    setVal('v-dnbr',fmt(s.fuel.dnbr,2),s.fuel.dnbr<1.3?'crit':s.fuel.dnbr<2.0?'warn':'');
+    setVal('v-melt',fmt(s.fuel.fuelMeltFrac*100,2)+' %',s.fuel.fuelMeltFrac>0?'crit':'');
+    setVal('v-oxide',uOxide(s.fuel.cladOxide));
+    setVal('v-burnup',uBurnup(s.fuel.burnup));
+
+    updateRcpDisplay(s.rcp);
+    updateRodDisplay(s.rods);
+
+    setVal('v-eccs',s.eccs.status,s.eccs.status!=='Standby'?'warn':'');
+    setVal('v-hpi',uFlow(s.eccs.hpiFlow),s.eccs.hpiFlow>0?'warn':'');
+    setVal('v-lpi',uFlow(s.eccs.lpiFlow),s.eccs.lpiFlow>0?'warn':'');
+    setVal('v-accpres',uP(s.eccs.accumulatorPressure));
+    setVal('v-accvol',uVol(s.eccs.accumulatorVolume));
+    setVal('v-contpres',ukP(s.containment.pressureKPa),s.containment.pressureKPa>110?'crit':s.containment.pressureKPa>105?'warn':'');
+    setVal('v-conttemp',uT(s.containment.tempC,1));
+
+    setVal('v-offsite',s.electrical.offSitePower?'AVAILABLE':'LOST',s.electrical.offSitePower?'':'crit');
+    setVal('v-diesel',s.electrical.dieselRunning?'RUNNING':'OFF',s.electrical.dieselRunning?'warn':'');
+    setVal('v-rps',s.rpsEnabled?'ENABLED':'BYPASSED',s.rpsEnabled?'':'warn');
+
+    setVal('v-i135',fmtE(s.poisons.iodine135));
+    setVal('v-xe135',fmtE(s.poisons.xenon135));
+    setVal('v-xeeq',fmtE(s.poisons.xenonEq));
+    var xr=s.poisons.xenonEq>0?s.poisons.xenon135/s.poisons.xenonEq:0;
+    setVal('v-xerat',fmt(xr,4),xr>1.5?'warn':'');
+    setBar('bar-xe',Math.min(xr/2,1),0.5,0.75);
+    setVal('v-pm149',fmtE(s.poisons.promethium149));
+    setVal('v-sm149',fmtE(s.poisons.samarium149));
+    var sr=s.poisons.samariumEq>0?s.poisons.samarium149/s.poisons.samariumEq:0;
+    setVal('v-smrat',fmt(sr,4));
+
+    // sync toggles
+    toggleStates.turbine=tOn;
+    document.getElementById('btn-turb').textContent='TURBINE: '+(tOn?'ON':'OFF');
+    document.getElementById('btn-turb').classList.toggle('active-on',tOn);
+    toggleStates.offsite=s.electrical.offSitePower;
+    document.getElementById('btn-offsite').textContent='OFFSITE: '+(s.electrical.offSitePower?'ON':'OFF');
+    document.getElementById('btn-offsite').classList.toggle('active-on',s.electrical.offSitePower);
+    toggleStates.diesel=s.electrical.dieselRunning;
+    document.getElementById('btn-diesel').textContent='DIESEL: '+(s.electrical.dieselRunning?'ON':'OFF');
+    document.getElementById('btn-diesel').classList.toggle('active-on',s.electrical.dieselRunning);
+    toggleStates.rps=s.rpsEnabled;
+    document.getElementById('btn-rps').textContent='RPS: '+(s.rpsEnabled?'ON':'OFF');
+    document.getElementById('btn-rps').classList.toggle('active-on',s.rpsEnabled);
+    toggleStates.rodAuto=s.rods.autoMode;
+    document.getElementById('btn-rod-auto').textContent='AUTO: '+(s.rods.autoMode?'ON':'OFF');
+    document.getElementById('btn-rod-auto').classList.toggle('active-on',s.rods.autoMode);
+    document.getElementById('rod-auto-status').textContent=s.rods.autoMode?'AUTO (Tavg)':'MANUAL';
+    toggleStates.accum=!s.eccs.accumulatorIsolated;
+    document.getElementById('btn-accum').textContent='ACCUM: '+(s.eccs.accumulatorIsolated?'ISOLATED':'ALIGNED');
+    // sync new auto-control toggles
+    toggleStates.rodScramOvr=s.rods.scramOverride;
+    document.getElementById('btn-rod-scram-ovr').textContent='SCRAM OVR: '+(s.rods.scramOverride?'ON':'OFF');
+    document.getElementById('btn-rod-scram-ovr').classList.toggle('active-on',s.rods.scramOverride);
+    toggleStates.przHtrAuto=s.pressurizer.heaterAutoEnabled;
+    document.getElementById('btn-prz-htr-auto').textContent='HTR AUTO: '+(s.pressurizer.heaterAutoEnabled?'ON':'OFF');
+    document.getElementById('btn-prz-htr-auto').classList.toggle('active-on',s.pressurizer.heaterAutoEnabled);
+    toggleStates.przSprayAuto=s.pressurizer.sprayAutoEnabled;
+    document.getElementById('btn-prz-spray-auto').textContent='SPRAY AUTO: '+(s.pressurizer.sprayAutoEnabled?'ON':'OFF');
+    document.getElementById('btn-prz-spray-auto').classList.toggle('active-on',s.pressurizer.sprayAutoEnabled);
+    toggleStates.govAuto=s.turbine.governorAutoEnabled;
+    document.getElementById('btn-gov-auto').textContent='GOV AUTO: '+(s.turbine.governorAutoEnabled?'ON':'OFF');
+    document.getElementById('btn-gov-auto').classList.toggle('active-on',s.turbine.governorAutoEnabled);
+    toggleStates.fwAuto=s.sg.fwAutoEnabled;
+    document.getElementById('btn-fw-auto').textContent='FW AUTO: '+(s.sg.fwAutoEnabled?'ON':'OFF');
+    document.getElementById('btn-fw-auto').classList.toggle('active-on',s.sg.fwAutoEnabled);
+    toggleStates.fwTripOvr=s.sg.fwTripOverride;
+    document.getElementById('btn-fw-trip-ovr').textContent='PUMP OVR: '+(s.sg.fwTripOverride?'ON':'OFF');
+    document.getElementById('btn-fw-trip-ovr').classList.toggle('active-on',s.sg.fwTripOverride);
+
+    updateSafetyMargins(s);
+    updateHeatBalance(s);
+    updateFuelProfile(s);
+    updateProtFunctions(s);
+    updateCoreDamage(s);
+    updateEventLog();
+  }).catch(function(e){console.error('Update error:',e)});
+}
+
+function updateEventLog(){
+  apiGet('/api/events').then(function(events){
+    var el=document.getElementById('event-log');
+    if(!events||events.length===lastEventCount)return;
+    lastEventCount=events.length;
+    var h='';
+    for(var i=0;i<events.length;i++){var e=events[i];h+='<div class="evt"><span class="evt-time">['+fmt(e.t,1)+'s]</span> <span class="evt-cat">'+e.cat+'</span> '+e.msg+'</div>';}
+    el.innerHTML=h;el.scrollTop=el.scrollHeight;
+  }).catch(function(){});
+}
+
+function updateRodDisplay(rods){
+  var c=document.getElementById('rod-display'),lb=['A','B','C','D'],h='';
+  for(var i=0;i<4;i++){var p=rods.positions[i],pc=(p/228*100).toFixed(0);
+    h+='<div class="rod-col"><div class="rod-label">BANK '+lb[i]+'</div><div class="rod-bar-outer"><div class="rod-bar-inner" style="height:'+pc+'%"></div></div><div class="rod-val">'+fmt(p,0)+'</div></div>';}
+  c.innerHTML=h;
+}
+
+function updateRcpDisplay(rcp){
+  var c=document.getElementById('rcp-grid'),h='';
+  for(var i=0;i<4;i++){var st=rcp.states[i],sp=(rcp.speeds[i]*100).toFixed(0),ic=st==='Running'?'on':st==='CoastingDown'||st==='Starting'?'coast':'off';
+    h+='<div class="rcp-box"><div class="rcp-id"><span class="rcp-indicator '+ic+'"></span>RCP '+(i+1)+'</div><div style="font-size:10px;color:var(--grn-dim)">'+st+' \u00B7 '+sp+'%</div></div>';}
+  c.innerHTML=h;
+}
+
+function updateRhoBars(rho){
+  var c=document.getElementById('rho-bars'),mx=200,h='',items=[
+    ['RODS',rho.controlRods],['DOPPLER',rho.doppler],['MODERATOR',rho.moderator],
+    ['BORON',rho.boron],['XENON',rho.xenon],['SAMARIUM',rho.samarium],
+    ['VOID',rho.voidEff],['BIAS',rho.bias]];
+  for(var i=0;i<items.length;i++){var nm=items[i][0],v=items[i][1],n=Math.min(Math.abs(v)/mx,1),neg=v<0,l=neg?(50-n*50):50,w=n*50;
+    h+='<div class="rho-bar-container"><div class="rho-bar-label"><span>'+nm+'</span><span>'+fmt(v,1)+'</span></div><div class="rho-bar-track"><div class="rho-bar-zero"></div><div class="rho-bar-fill '+(neg?'neg':'')+'" style="left:'+l+'%;width:'+w+'%"></div></div></div>';}
+  c.innerHTML=h;
+}
+
+function updateSafetyMargins(s){
+  var dnbr=s.fuel.dnbr,lhrWm=s.fuel.linearHeatRate,sub=s.primary.subcoolingMargin,
+      vd=s.primary.voidFraction*100,pp=s.primary.pressureMPa,
+      ta=s.primary.tavg,fcl=s.fuel.centrelineTemp;
+  // DNBR: 0%=limit(1.3), 100%=safe(4.3). Warn <1.6, crit <1.3
+  var dnbrPct=Math.max(0,Math.min(100,(dnbr-1.3)/(4.3-1.3)*100));
+  setVal('sm-dnbr',fmt(dnbr,2)+(dnbr>=1.3?' \u2795'+fmt(dnbr-1.3,2):''),dnbr<1.3?'crit':dnbr<1.6?'warn':'');
+  setBarRaw('smbar-dnbr',dnbrPct,dnbr<1.3?'crit':dnbr<1.6?'warn':'');
+  // Subcooling: scale 10–100°C. Labels show current unit.
+  var subPct=Math.max(0,Math.min(100,(sub-10)/90*100));
+  setVal('sm-sub',udT(sub,1),sub<10?'crit':sub<20?'warn':'');
+  setBarRaw('smbar-sub',subPct,sub<10?'crit':sub<20?'warn':'');
+  setLbl('sm-lbl-sub',useAmerican?'(min 50\u00B0F)':'(min 10\u00B0C)');
+  // LHR: scale 0–44 kW/m. Warn >35, crit >44
+  var lhrKWm=lhrWm/1000,lhrPct=Math.min(100,lhrKWm/44*100);
+  setVal('sm-lhr',uLHR(lhrWm),lhrKWm>44?'crit':lhrKWm>35?'warn':'');
+  setBarRaw('smbar-lhr',lhrPct,lhrKWm>44?'crit':lhrKWm>35?'warn':'');
+  setLbl('sm-lbl-lhr',useAmerican?'(max 13.4 kW/ft)':'(max 44 kW/m)');
+  // Void
+  setVal('sm-void',fmt(vd,3)+'%',vd>1?'crit':vd>0.5?'warn':'');
+  // Pressure margins — express delta in current unit
+  var phi=16.55-pp,plo=pp-13.10;
+  setVal('sm-phi',useAmerican?'\u2212'+fmt(phi*145.038,0)+' psi':'\u2212'+fmt(phi,3)+' MPa',phi<0.3?'crit':phi<0.8?'warn':'');
+  setVal('sm-plo',useAmerican?'+'+fmt(plo*145.038,0)+' psi':'+'+fmt(plo,3)+' MPa',plo<0.3?'crit':plo<0.8?'warn':'');
+  setLbl('sm-lbl-phi',useAmerican?'2400 psi':'16.55 MPa');
+  setLbl('sm-lbl-plo',useAmerican?'1900 psi':'13.10 MPa');
+  // Tavg margin
+  var taM=325.5-ta;
+  setVal('sm-tavg','\u2212'+udT(taM,1),taM<3?'crit':taM<15?'warn':'');
+  setLbl('sm-lbl-tavg',useAmerican?'617.9\u00B0F':'325.5\u00B0C');
+  // Fuel CL margin (melt ~2840°C / 5144°F)
+  var fclM=2840-fcl;
+  setVal('sm-fcl',useAmerican?'\u2212'+fmt(fclM*9/5,0)+'\u00B0F':'\u2212'+fmt(fclM,0)+'\u00B0C',fclM<100?'crit':fclM<500?'warn':'');
+  setLbl('sm-lbl-fcl',useAmerican?'5144\u00B0F':'2840\u00B0C');
+}
+
+function updateHeatBalance(s){
+  var fis=s.neutronics.thermalPowerMW,dec=s.neutronics.decayHeatMW||0,
+      tot=s.neutronics.totalPowerMW,gen=s.electrical.generatorMW,
+      aux=s.electrical.housekeepingMW||0,net=s.electrical.netMW;
+  var cond=Math.max(0,tot-gen),eff=tot>0?gen/tot*100:0;
+  setVal('hb-fis',fmt(fis,1)+' MW');
+  setVal('hb-dec',fmt(dec,1)+' MW',dec>100?'warn':'');
+  setVal('hb-tot',fmt(tot,1)+' MW');
+  setBarRaw('hbbar-tot',tot/3600*100,tot>3600*1.05?'crit':tot>3600*1.02?'warn':'');
+  setVal('hb-gen',fmt(gen,1)+' MW','cyan');
+  setVal('hb-aux',fmt(aux,1)+' MW');
+  setVal('hb-net',fmt(net,1)+' MW',net<0?'crit':'cyan');
+  setVal('hb-cond',fmt(cond,1)+' MW');
+  setVal('hb-eff',(tot>1?fmt(eff,2):'---')+'%',eff<30&&tot>100?'warn':'');
+}
+
+function updateFuelProfile(s){
+  var cl=s.fuel.centrelineTemp,av=s.fuel.averageTemp,sf=s.fuel.surfaceTemp,
+      ci=s.fuel.cladInnerTemp,co=s.fuel.cladOuterTemp,cb=s.fuel.coolantBulkTemp,
+      gap=sf-ci,fq=s.fuel.peakingFactor,hs=s.fuel.cladHoopStress,foul=s.sg.fouling;
+  setVal('fp-cl',uT(cl,0),cl>2500?'crit':cl>2000?'warn':'');
+  setVal('fp-avg',uT(av,0));
+  setVal('fp-surf',uT(sf,0));
+  setVal('fp-gap',udT(gap,0),gap>200?'warn':'');
+  setVal('fp-ci',uT(ci,0));
+  setVal('fp-co',uT(co,0),co>600?'crit':co>400?'warn':'');
+  setVal('fp-cb',uT(cb,0));
+  setVal('fp-fq',fmt(fq,2),fq>3.0?'crit':fq>2.6?'warn':'');
+  setVal('fp-hoop',uStress(hs),hs>600?'crit':hs>400?'warn':'');
+  setVal('fp-foul',fmt(foul,3),foul<0.7?'warn':foul<0.5?'crit':'');
+}
+
+function updateProtFunctions(s){
+  var pp=s.primary.pressureMPa,ta=s.primary.tavg,ff=s.primary.flowFraction*100,
+      pf=s.neutronics.thermalPowerFrac*100,sur=s.neutronics.startupRateDPM,
+      cont=s.containment.pressureKPa,sgl=s.sg.level*100,dnbr=s.fuel.dnbr,
+      tr=s.turbine.tripped;
+  var U=useAmerican;
+  // [label, value-string, setpoint-string, warn-condition, crit-condition]
+  var fns=[
+    ['HI FLUX',   fmt(pf,1)+'%',           '118.0%',                   pf>105,   pf>118],
+    ['HI SUR',    fmt(sur,1)+' DPM',        '5.0 DPM',                  sur>3,    sur>5],
+    ['LO PRESS',  uP(pp),                   U?'1900 psi':'13.10 MPa',   pp<14,    pp<13.1],
+    ['HI PRESS',  uP(pp),                   U?'2400 psi':'16.55 MPa',   pp>16,    pp>16.55],
+    ['HI TEMP',   uT(ta,1),                 U?'617.9\u00B0F':'325.5\u00B0C', ta>315, ta>325.5],
+    ['LO FLOW',   fmt(ff,1)+'%',            '87.0%',                    ff<95,    ff<87],
+    ['HI CONT',   ukP(cont),                U?'14.9 psi':'103 kPa',     cont>102, cont>103],
+    ['LO SG LVL', fmt(sgl,1)+'%',           '15.0%',                    sgl<25,   sgl<15],
+    ['LO DNBR',   fmt(dnbr,2),              '1.30',                     dnbr<1.6, dnbr<1.3],
+    ['TURB TRIP', tr?'TRIPPED':'OK',        'N/A',                      false,    tr]
+  ];
+  var h='<table style="width:100%;border-collapse:collapse">';
+  h+='<tr><th style="text-align:left;color:var(--grn-dark);font-size:10px;font-weight:normal;padding:0 2px">FUNC</th><th style="text-align:right;color:var(--grn-dark);font-size:10px;font-weight:normal;padding:0 2px">VALUE</th><th style="text-align:right;color:var(--grn-dark);font-size:10px;font-weight:normal;padding:0 2px">SETP</th><th style="text-align:center;color:var(--grn-dark);font-size:10px;font-weight:normal;padding:0 4px">ST</th></tr>';
+  for(var i=0;i<fns.length;i++){
+    var f=fns[i],col=f[4]?'var(--red)':f[3]?'var(--amber)':'var(--grn-dim)',
+        st=f[4]?'&#9888;':f[3]?'&#9650;':'&#10003;',
+        vc=f[4]?'color:var(--red)':f[3]?'color:var(--amber)':'';
+    h+='<tr style="border-bottom:1px solid #0a150a"><td style="padding:2px 2px;color:var(--grn-dim);font-size:10px">'+f[0]+'</td><td style="text-align:right;padding:2px 2px;font-family:VT323,monospace;font-size:14px;'+vc+'">'+f[1]+'</td><td style="text-align:right;padding:2px 2px;color:var(--grn-dark);font-size:10px">'+f[2]+'</td><td style="text-align:center;padding:2px 4px;color:'+col+'">'+st+'</td></tr>';
+  }
+  h+='</table>';
+  document.getElementById('prot-table').innerHTML=h;
+}
+
+// Core damage state order for severity comparison
+var cdStateOrder = {Normal:0,CladFailure:1,FuelMelting:2,CoreDamage:3,Meltdown:4,VesselFailure:5};
+
+function updateCoreDamage(s){
+  var cd = s.coreDamage;
+  if(!cd) return;
+  var state = cd.state || 'Normal';
+  var dmg = cd.damageFraction || 0;
+  var zrox = cd.zrOxidizedFraction || 0;
+  var h2pct = (s.containment && s.containment.h2FractionPct) || 0;
+  var h2kg = cd.hydrogenKg || 0;
+  var fprel = cd.fpReleaseFraction || 0;
+  var exo = cd.exothermicHeatMW || 0;
+  var lvl = cdStateOrder[state] || 0;
+  var meltdown = cd.meltdown || false;
+
+  // state label colouring
+  var stateCol = lvl>=4?'var(--red)':lvl>=2?'var(--amber)':'';
+  document.getElementById('v-cds').textContent = state.replace(/([A-Z])/g,' $1').trim().toUpperCase();
+  document.getElementById('v-cds').style.color = stateCol;
+
+  document.getElementById('v-cdf').textContent = fmt(dmg*100,2)+' %';
+  document.getElementById('v-cdf').style.color = lvl>=3?'var(--red)':lvl>=1?'var(--amber)':'';
+  setBarRaw('bar-cdf', Math.min(dmg,1), lvl>=3?'var(--red)':lvl>=1?'var(--amber)':'var(--grn-dim)');
+
+  document.getElementById('v-zrox').textContent = fmt(zrox*100,2)+' %';
+  setBarRaw('bar-zrox', Math.min(zrox,1), zrox>0.5?'var(--red)':zrox>0.1?'var(--amber)':'var(--grn-dim)');
+
+  document.getElementById('v-exoheat').textContent = fmt(exo,1)+' MW';
+  document.getElementById('v-exoheat').style.color = exo>50?'var(--red)':exo>1?'var(--amber)':'';
+
+  document.getElementById('v-h2kg').textContent = fmt(h2kg,0)+' kg';
+  document.getElementById('v-h2pct').textContent = fmt(h2pct,2)+' vol%';
+  document.getElementById('v-h2pct').style.color = h2pct>8?'var(--red)':h2pct>4?'var(--amber)':'';
+  // bar: 0-20% maps to full scale; 4% = flammable (amber at 20%), 8% = detonable (red at 40%)
+  setBarRaw('bar-h2', Math.min(h2pct/20,1), h2pct>8?'var(--red)':h2pct>4?'var(--amber)':'var(--grn-dim)');
+
+  document.getElementById('v-fprel').textContent = fmt(fprel*100,1)+' %';
+
+  // meltdown banner
+  document.getElementById('meltdown-banner').style.display = meltdown ? 'block' : 'none';
+
+  // alarm tags
+  function setAlarm(id, active){ document.getElementById(id).className='alarm-tag '+(active?'active':'clear'); }
+  setAlarm('a-clad',   lvl >= 1);
+  setAlarm('a-fmelt',  lvl >= 2);
+  setAlarm('a-cdmg',   lvl >= 3);
+  setAlarm('a-meltdown', lvl >= 4);
+  setAlarm('a-vessel', lvl >= 5);
+  setAlarm('a-h2',     h2pct > 4);
+
+  // flash entire panel body red during meltdown
+  var pb = document.querySelector('#meltdown-banner').parentNode;
+  if(meltdown) pb.style.boxShadow = '0 0 20px 4px var(--red)';
+  else pb.style.boxShadow = '';
+}
+
+apiPost('/api/autotick',{enabled:true,speed:1});
+setInterval(update,250);
+update();
+</script>
+</body>
+</html>
