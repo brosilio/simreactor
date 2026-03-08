@@ -48,6 +48,7 @@ namespace PwrSimWeb
     public record PeakingCmd(double Fq = 2.5);
     public record ValueCmd(double Value = 0);
     public record ModeCmd(string Mode = "SteadyState");
+    public record BypassCmd(string Signal = "None", bool Bypassed = false);
 
     // =====================================================================
     //  Program
@@ -250,6 +251,12 @@ namespace PwrSimWeb
             app.MapPost("/api/trip/reset", () => { lock (_lock) _engine.ResetTrip();   return Results.Ok(); });
             app.MapPost("/api/rps", (ToggleCmd cmd) =>
             { lock (_lock) _engine.SetProtectionSystem(cmd.Enabled); return Results.Ok(); });
+            app.MapPost("/api/rps/bypass", (BypassCmd cmd) =>
+            {
+                if (Enum.TryParse<TripSignal>(cmd.Signal, true, out var sig))
+                    lock (_lock) _engine.SetTripBypassed(sig, cmd.Bypassed);
+                return Results.Ok();
+            });
 
             app.MapPost("/api/rcp", (RcpCmd cmd) =>
             { lock (_lock) _engine.CommandRcp(cmd.Pump, cmd.Start); return Results.Ok(); });
@@ -331,6 +338,7 @@ namespace PwrSimWeb
                 scram = s.Scram.ToString(),
                 trips = s.ActiveTrips.ToString(),
                 rpsEnabled = s.ProtectionSystemEnabled == 1,
+                tripBypassFlags = (uint)s.TripBypassFlags,
                 neutronics = new {
                     neutronPop = s.NeutronPopulation,
                     thermalPowerFrac = s.ThermalPowerFraction + s.DecayHeatFraction,

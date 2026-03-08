@@ -201,6 +201,7 @@ namespace PwrSimulator
         public ReactorMode Mode;
         public ScramState   Scram;
         public TripSignal   ActiveTrips;
+        public TripSignal   TripBypassFlags;         // trips bypassed from causing a scram (still shown as active)
         public double       TripTimestamp;          // sim-time of last trip
         public byte         ProtectionSystemEnabled; // 1 = enabled
 
@@ -2215,6 +2216,17 @@ namespace PwrSimulator
         {
             _state.ProtectionSystemEnabled = (byte)(enabled ? 1 : 0);
             LogEvent("CMD", $"RPS {(enabled ? "ENABLED" : "BYPASSED (training mode)")}.");
+        }
+
+        /// <summary>Bypass or un-bypass a specific trip function.  The condition is still
+        /// annunciated in ActiveTrips but will not trigger an automatic scram.</summary>
+        public void SetTripBypassed(TripSignal trip, bool bypassed)
+        {
+            if (bypassed)
+                _state.TripBypassFlags |= trip;
+            else
+                _state.TripBypassFlags &= ~trip;
+            LogEvent("RPS", $"Trip bypass {(bypassed ? "SET" : "CLEARED")}: {trip}");
         }
 
         // ---- Boron / CVCS ---------------------------------------------------

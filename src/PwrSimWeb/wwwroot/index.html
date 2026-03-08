@@ -100,6 +100,28 @@ body::after {
 .dval.crit { color: var(--red); text-shadow: 0 0 8px rgba(255,0,0,0.5); animation: alarm-blink 0.8s step-end infinite; }
 .dval.cyan { color: var(--cyan); text-shadow: 0 0 6px rgba(51,255,204,0.5); }
 
+/* Trip bypass checkboxes */
+.byp-lbl { font-size: 9px; color: var(--grn-dark); cursor: pointer; display: flex; align-items: center; gap: 3px; letter-spacing: 1px; user-select: none; transition: color 0.15s; }
+.byp-lbl:hover { color: var(--grn-dim); }
+.byp-lbl.bypassed { color: var(--amber); text-shadow: 0 0 5px rgba(255,170,0,0.5); }
+.byp-lbl input[type=checkbox] {
+  appearance: none; -webkit-appearance: none;
+  width: 10px; height: 10px; margin: 0; flex-shrink: 0;
+  border: 1px solid var(--grn-dark); background: var(--bg);
+  cursor: pointer; position: relative; transition: all 0.15s;
+}
+.byp-lbl:hover input[type=checkbox] { border-color: var(--grn-dim); box-shadow: 0 0 4px var(--grn-glow); }
+.byp-lbl input[type=checkbox]:checked {
+  background: var(--amber); border-color: var(--amber);
+  box-shadow: 0 0 6px rgba(255,170,0,0.7);
+}
+.byp-lbl input[type=checkbox]:checked::after {
+  content: ''; position: absolute; top: 1px; left: 3px;
+  width: 3px; height: 6px;
+  border: 1px solid #000; border-top: none; border-left: none;
+  transform: rotate(45deg);
+}
+
 /* Bar gauges */
 .bar-gauge { height: 10px; background: #0d1f0d; border: 1px solid var(--grn-dark); margin: 3px 0; overflow: hidden; }
 .bar-fill { height: 100%; background: var(--grn); box-shadow: 0 0 6px var(--grn-glow); transition: width 0.3s; }
@@ -241,11 +263,11 @@ body::after {
   <div class="panel">
     <div class="panel-title">CORE NEUTRONICS</div>
     <div class="panel-body">
-      <div class="drow"><span class="dlabel">THERMAL POWER</span><span class="dval" id="v-power">---</span></div>
+      <div class="drow"><span class="dlabel">THERMAL POWER</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-hiflux" title="Bypass Hi-Flux scram"><input type="checkbox" id="byp-hiflux" onchange="setBypassed('HighNeutronFlux',this.checked)">BYP</label><span class="dval" id="v-power">---</span></div></div>
       <div class="bar-gauge"><div class="bar-fill" id="bar-power" style="width:0%"></div></div>
       <div class="drow"><span class="dlabel">POWER (MW-th)</span><span class="dval" id="v-powermw">---</span></div>
       <div class="drow"><span class="dlabel">NEUTRON POP</span><span class="dval" id="v-npop">---</span></div>
-      <div class="drow"><span class="dlabel">STARTUP RATE</span><span class="dval" id="v-sur">---</span></div>
+      <div class="drow"><span class="dlabel">STARTUP RATE</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-hirate" title="Bypass Hi-Flux-Rate scram"><input type="checkbox" id="byp-hirate" onchange="setBypassed('HighNeutronFluxRate',this.checked)">RATE</label><label class="byp-lbl" id="bypl-hisur" title="Bypass Hi-SUR scram"><input type="checkbox" id="byp-hisur" onchange="setBypassed('HighStartupRate',this.checked)">SUR</label><span class="dval" id="v-sur">---</span></div></div>
       <div class="drow"><span class="dlabel">DECAY HEAT</span><span class="dval" id="v-decay">---</span></div>
       <div class="drow"><span class="dlabel">TOTAL POWER MW</span><span class="dval" id="v-totmw">---</span></div>
     </div>
@@ -306,12 +328,12 @@ body::after {
   <div class="panel">
     <div class="panel-title">PRIMARY COOLANT SYSTEM</div>
     <div class="panel-body">
-      <div class="drow"><span class="dlabel">PRESSURE</span><span class="dval" id="v-ppres">---</span></div>
-      <div class="drow"><span class="dlabel">T-AVG</span><span class="dval" id="v-tavg">---</span></div>
+      <div class="drow"><span class="dlabel">PRESSURE</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-hipres" title="Bypass Hi-Press scram"><input type="checkbox" id="byp-hipres" onchange="setBypassed('HighPressure',this.checked)">HI</label><label class="byp-lbl" id="bypl-lopres" title="Bypass Lo-Press scram"><input type="checkbox" id="byp-lopres" onchange="setBypassed('LowPressure',this.checked)">LO</label><span class="dval" id="v-ppres">---</span></div></div>
+      <div class="drow"><span class="dlabel">T-AVG</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-hitemp" title="Bypass Hi-Tavg scram"><input type="checkbox" id="byp-hitemp" onchange="setBypassed('HighTemperature',this.checked)">BYP</label><span class="dval" id="v-tavg">---</span></div></div>
       <div class="drow"><span class="dlabel">T-COLD (IN)</span><span class="dval" id="v-tcold">---</span></div>
       <div class="drow"><span class="dlabel">T-HOT (OUT)</span><span class="dval" id="v-thot">---</span></div>
       <div class="drow"><span class="dlabel">DELTA-T</span><span class="dval" id="v-dt">---</span></div>
-      <div class="drow"><span class="dlabel">FLOW</span><span class="dval" id="v-flow">---</span></div>
+      <div class="drow"><span class="dlabel">FLOW</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-loflow" title="Bypass Lo-Flow scram"><input type="checkbox" id="byp-loflow" onchange="setBypassed('LowFlow',this.checked)">BYP</label><span class="dval" id="v-flow">---</span></div></div>
       <div class="drow"><span class="dlabel">VOID FRAC</span><span class="dval" id="v-void">---</span></div>
       <div class="drow"><span class="dlabel">SUBCOOL MARGIN</span><span class="dval" id="v-subcool">---</span></div>
       <div class="drow"><span class="dlabel">DENSITY</span><span class="dval" id="v-density">---</span></div>
@@ -387,7 +409,7 @@ body::after {
       <div class="drow"><span class="dlabel">PRIM OUT TEMP</span><span class="dval" id="v-sgtout">---</span></div>
       <div class="drow"><span class="dlabel">SEC PRESSURE</span><span class="dval" id="v-sgpres">---</span></div>
       <div class="drow"><span class="dlabel">STEAM TEMP</span><span class="dval" id="v-sgsteam">---</span></div>
-      <div class="drow"><span class="dlabel">SG LEVEL</span><span class="dval" id="v-sglvl">---</span></div>
+      <div class="drow"><span class="dlabel">SG LEVEL</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-losglv" title="Bypass Lo-SG-Level scram"><input type="checkbox" id="byp-losglv" onchange="setBypassed('LowSteamGeneratorLevel',this.checked)">LO</label><label class="byp-lbl" id="bypl-hisglv" title="Bypass Hi-SG-Level scram"><input type="checkbox" id="byp-hisglv" onchange="setBypassed('HighSteamGeneratorLevel',this.checked)">HI</label><span class="dval" id="v-sglvl">---</span></div></div>
       <div class="bar-gauge"><div class="bar-fill" id="bar-sglvl" style="width:0%"></div></div>
       <div class="drow"><span class="dlabel">STEAM FLOW</span><span class="dval" id="v-sgstmflw">---</span></div>
       <div class="drow"><span class="dlabel">FEED FLOW</span><span class="dval" id="v-sgfwflw">---</span></div>
@@ -425,7 +447,7 @@ body::after {
   <div class="panel">
     <div class="panel-title">TURBINE-GENERATOR</div>
     <div class="panel-body">
-      <div class="drow"><span class="dlabel">STATUS</span><span class="dval" id="v-turbstat">---</span></div>
+      <div class="drow"><span class="dlabel">STATUS</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-turbtrp" title="Bypass Turbine-Trip scram"><input type="checkbox" id="byp-turbtrp" onchange="setBypassed('TurbineTrip',this.checked)">BYP</label><span class="dval" id="v-turbstat">---</span></div></div>
       <div class="drow"><span class="dlabel">LOAD</span><span class="dval" id="v-turbload">---</span></div>
       <div class="drow"><span class="dlabel">SPEED</span><span class="dval" id="v-turbspd">---</span></div>
       <div class="drow"><span class="dlabel">THROTTLE</span><span class="dval" id="v-turbthrt">---</span></div>
@@ -459,7 +481,7 @@ body::after {
       <div class="drow"><span class="dlabel">FUEL SURF TEMP</span><span class="dval" id="v-fuelsrf">---</span></div>
       <div class="drow"><span class="dlabel">CLAD OUTER</span><span class="dval" id="v-cladout">---</span></div>
       <div class="drow"><span class="dlabel">LINEAR HEAT RATE</span><span class="dval" id="v-lhr">---</span></div>
-      <div class="drow"><span class="dlabel">DNBR</span><span class="dval" id="v-dnbr">---</span></div>
+      <div class="drow"><span class="dlabel">DNBR</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-dnbr" title="Bypass Lo-DNBR scram"><input type="checkbox" id="byp-dnbr" onchange="setBypassed('LowDNBRatio',this.checked)">BYP</label><span class="dval" id="v-dnbr">---</span></div></div>
       <div class="drow"><span class="dlabel">FUEL MELT FRAC</span><span class="dval" id="v-melt">---</span></div>
       <div class="drow"><span class="dlabel">CLAD OXIDE &mu;m</span><span class="dval" id="v-oxide">---</span></div>
       <div class="drow"><span class="dlabel">BURNUP MWd/tHM</span><span class="dval" id="v-burnup">---</span></div>
@@ -495,7 +517,7 @@ body::after {
       <div class="drow"><span class="dlabel">LPI FLOW</span><span class="dval" id="v-lpi">---</span></div>
       <div class="drow"><span class="dlabel">ACCUM PRESS</span><span class="dval" id="v-accpres">---</span></div>
       <div class="drow"><span class="dlabel">ACCUM VOL</span><span class="dval" id="v-accvol">---</span></div>
-      <div class="drow"><span class="dlabel">CONTAINMENT P</span><span class="dval" id="v-contpres">---</span></div>
+      <div class="drow"><span class="dlabel">CONTAINMENT P</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-hicont" title="Bypass Hi-Containment-Press scram"><input type="checkbox" id="byp-hicont" onchange="setBypassed('HighContainmentPressure',this.checked)">BYP</label><span class="dval" id="v-contpres">---</span></div></div>
       <div class="drow"><span class="dlabel">CONTAINMENT T</span><span class="dval" id="v-conttemp">---</span></div>
       <div class="btn-row">
         <button class="btn danger" onclick="apiPost('/api/eccs/si')">SAFETY INJECTION</button>
@@ -508,7 +530,7 @@ body::after {
   <div class="panel">
     <div class="panel-title">ELECTRICAL / PROTECTION</div>
     <div class="panel-body">
-      <div class="drow"><span class="dlabel">OFF-SITE POWER</span><span class="dval" id="v-offsite">---</span></div>
+      <div class="drow"><span class="dlabel">OFF-SITE POWER</span><div style="display:flex;align-items:center;gap:5px"><label class="byp-lbl" id="bypl-loop" title="Bypass LOOP scram"><input type="checkbox" id="byp-loop" onchange="setBypassed('LossOfOffSitePower',this.checked)">BYP</label><span class="dval" id="v-offsite">---</span></div></div>
       <div class="drow"><span class="dlabel">DIESEL GEN</span><span class="dval" id="v-diesel">---</span></div>
       <div class="drow"><span class="dlabel">RPS STATUS</span><span class="dval" id="v-rps">---</span></div>
       <div class="btn-row">
@@ -643,6 +665,40 @@ var toggleStates = {spray:false,turbine:true,offsite:true,diesel:false,rps:true,
 
 function apiPost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):'{}'})}
 function apiGet(u){return fetch(u).then(function(r){return r.json();})}
+
+// TripSignal enum bit values (must match C# TripSignal enum)
+var TripBit={HighNeutronFluxRate:1,HighNeutronFlux:2,HighPressure:8,LowPressure:16,
+  HighTemperature:32,LowFlow:64,HighContainmentPressure:128,LowSteamGeneratorLevel:256,
+  HighSteamGeneratorLevel:512,TurbineTrip:1024,LossOfOffSitePower:2048,
+  HighStartupRate:16384,LowDNBRatio:32768};
+
+function setBypassed(signal,bypassed){apiPost('/api/rps/bypass',{signal:signal,bypassed:bypassed});}
+
+function syncBypassChecks(flags){
+  var map=[
+    ['byp-hiflux','bypl-hiflux',TripBit.HighNeutronFlux],
+    ['byp-hirate','bypl-hirate',TripBit.HighNeutronFluxRate],
+    ['byp-hisur','bypl-hisur',TripBit.HighStartupRate],
+    ['byp-hipres','bypl-hipres',TripBit.HighPressure],
+    ['byp-lopres','bypl-lopres',TripBit.LowPressure],
+    ['byp-hitemp','bypl-hitemp',TripBit.HighTemperature],
+    ['byp-loflow','bypl-loflow',TripBit.LowFlow],
+    ['byp-hicont','bypl-hicont',TripBit.HighContainmentPressure],
+    ['byp-losglv','bypl-losglv',TripBit.LowSteamGeneratorLevel],
+    ['byp-hisglv','bypl-hisglv',TripBit.HighSteamGeneratorLevel],
+    ['byp-dnbr','bypl-dnbr',TripBit.LowDNBRatio],
+    ['byp-turbtrp','bypl-turbtrp',TripBit.TurbineTrip],
+    ['byp-loop','bypl-loop',TripBit.LossOfOffSitePower]
+  ];
+  for(var i=0;i<map.length;i++){
+    var chkId=map[i][0],lblId=map[i][1],bit=map[i][2];
+    var chk=document.getElementById(chkId),lbl=document.getElementById(lblId);
+    if(!chk)continue;
+    var active=(flags&bit)!==0;
+    chk.checked=active;
+    if(lbl)lbl.classList.toggle('bypassed',active);
+  }
+}
 
 function cmdRodBank(){apiPost('/api/rod/bank',{bank:+document.getElementById('rod-bank').value,target:+document.getElementById('rod-target').value})}
 function cmdRodSpeed(){apiPost('/api/rod/speed',{speed:+document.getElementById('rod-speed').value})}
@@ -873,6 +929,7 @@ function renderState(s){
     updateFuelProfile(s);
     updateProtFunctions(s);
     updateCoreDamage(s);
+    syncBypassChecks(s.tripBypassFlags||0);
 }
 
 function renderEvents(events){

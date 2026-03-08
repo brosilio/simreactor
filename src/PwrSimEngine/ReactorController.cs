@@ -236,10 +236,12 @@ namespace PwrSimulator
 
             s.ActiveTrips = trips;
 
-            if (trips != TripSignal.None && s.Scram == ScramState.Normal)
+            // Bypassed trips still show as active but are excluded from the scram decision.
+            TripSignal scramTrips = trips & ~s.TripBypassFlags;
+            if (scramTrips != TripSignal.None && s.Scram == ScramState.Normal)
             {
                 Engine.ExecuteScram(ScramState.AutoScram);
-                Engine.LogEvent("RPS", $"Automatic reactor trip: {trips}");
+                Engine.LogEvent("RPS", $"Automatic reactor trip: {scramTrips}");
             }
         }
 
